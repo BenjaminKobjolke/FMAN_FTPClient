@@ -1,7 +1,7 @@
 from os.path import basename
 from tempfile import NamedTemporaryFile
 
-from core.commands import _open_local_file
+from core.commands import _open_local_files
 
 from fman import DirectoryPaneListener, NO, YES, fs, load_json, show_alert
 from fman.url import splitscheme
