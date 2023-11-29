@@ -67,7 +67,7 @@ class FtpFs(FileSystem):
         show_status_message('Loading %s...' % (path,))
         with FtpWrapper(self.scheme + path) as ftp:
             for name in ftp.conn.listdir(ftp.path):
-                self.get_stats(pathjoin(path, name))
+                #self.get_stats(pathjoin(path, name))
                 yield name
         show_status_message('Ready.', timeout_secs=0)
 
