@@ -1,5 +1,6 @@
 import ftplib
 import threading
+import time
 from urllib.parse import unquote, urlparse
 
 from fman import load_json
@@ -33,6 +34,13 @@ class FtpTlsSession(ftplib.FTP_TLS):
 
 class FtpWrapper():
     __conn_pool = {}
+    __conn_timestamps = {}
+    __pool_lock = threading.Lock()
+    # Connection timeout: close connections idle for more than 2 minutes
+    __CONNECTION_TIMEOUT = 120
+    # Max pool size: limit to 3 FTPHost objects per server
+    # (each FTPHost can spawn multiple child connections)
+    __MAX_POOL_SIZE = 3
 
     def __init__(self, url):
         u = self._get_bookmark(url)
@@ -45,22 +53,33 @@ class FtpWrapper():
         self._passwd = unquote(u.password or '')
 
     def __enter__(self):
-        if self.hash in self.__conn_pool:
-            try:
-                self.conn._session.voidcmd('NOOP')
-            except:
-                pass  # Assume connection timeout
-            else:
-                return self
+        with self.__pool_lock:
+            # Clean up stale connections periodically
+            self._cleanup_stale_connections()
 
-        session_factory = \
-            FtpTlsSession if self._scheme == 'ftps://' else FtpSession
-        ftp_host = ftputil.FTPHost(
-            self._host, self._port, self._user, self._passwd,
-            session_factory=session_factory)
+            if self.hash in self.__conn_pool:
+                conn = self.__conn_pool[self.hash]
+                # Check if connection is still valid and not closed
+                if not conn.closed:
+                    try:
+                        conn._session.voidcmd('NOOP')
+                        # Update timestamp on successful reuse
+                        self.__conn_timestamps[self.hash] = time.time()
+                        return self
+                    except:
+                        pass
+                # Connection is stale or closed, remove it from pool
+                self._remove_connection(self.hash)
 
-        self.__conn_pool[self.hash] = ftp_host
-        return self
+            session_factory = \
+                FtpTlsSession if self._scheme == 'ftps://' else FtpSession
+            ftp_host = ftputil.FTPHost(
+                self._host, self._port, self._user, self._passwd,
+                session_factory=session_factory)
+
+            self.__conn_pool[self.hash] = ftp_host
+            self.__conn_timestamps[self.hash] = time.time()
+            return self
 
     def __exit__(self, exc_type, exc_value, exc_tb):
         # try:
@@ -98,3 +117,36 @@ class FtpWrapper():
     @property
     def path(self):
         return self._path
+
+    def _remove_connection(self, conn_hash):
+        """Remove a connection from the pool and close it."""
+        if conn_hash in self.__conn_pool:
+            try:
+                self.__conn_pool[conn_hash].close()
+            except:
+                pass
+            del self.__conn_pool[conn_hash]
+            if conn_hash in self.__conn_timestamps:
+                del self.__conn_timestamps[conn_hash]
+
+    def _cleanup_stale_connections(self):
+        """Remove connections that have been idle for too long."""
+        current_time = time.time()
+        stale_hashes = []
+
+        for conn_hash, timestamp in self.__conn_timestamps.items():
+            if current_time - timestamp > self.__CONNECTION_TIMEOUT:
+                stale_hashes.append(conn_hash)
+
+        for conn_hash in stale_hashes:
+            self._remove_connection(conn_hash)
+
+        # Enforce max pool size (remove oldest connections)
+        if len(self.__conn_pool) > self.__MAX_POOL_SIZE:
+            sorted_conns = sorted(
+                self.__conn_timestamps.items(),
+                key=lambda x: x[1]
+            )
+            excess_count = len(self.__conn_pool) - self.__MAX_POOL_SIZE
+            for conn_hash, _ in sorted_conns[:excess_count]:
+                self._remove_connection(conn_hash)

@@ -126,10 +126,11 @@ class FtpFs(FileSystem):
         src_scheme, src_path = splitscheme(src_url)
         dst_scheme, dst_path = splitscheme(dst_url)
         if src_scheme == dst_scheme and commonprefix([src_path, dst_path]):
-            # TODO avoid second connection
-            with FtpWrapper(src_url) as src_ftp, \
-                    FtpWrapper(dst_url) as dst_ftp:
-                src_ftp.conn.rename(src_ftp.path, dst_ftp.path)
+            # Use single connection for same-server renames
+            with FtpWrapper(src_url) as ftp:
+                # Get destination path from dst_url
+                dst_ftp = FtpWrapper(dst_url)
+                ftp.conn.rename(ftp.path, dst_ftp.path)
                 return
 
         fs.copy(src_url, dst_url)
