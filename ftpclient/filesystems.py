@@ -66,6 +66,9 @@ class FtpFs(FileSystem):
             return
         show_status_message('Loading %s...' % (path,))
         with FtpWrapper(self.scheme + path) as ftp:
+            # ftputil's listdir() automatically populates its internal
+            # _lstat_cache with all file stats. No need to manually
+            # pre-fetch stats - they're already cached!
             for name in ftp.conn.listdir(ftp.path):
                 yield name
         show_status_message('Ready.', timeout_secs=0)
