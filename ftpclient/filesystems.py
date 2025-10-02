@@ -3,7 +3,7 @@ import re
 import stat
 from datetime import datetime
 from io import UnsupportedOperation
-from os.path import commonprefix, join as pathjoin
+from os.path import commonprefix, dirname, join as pathjoin
 from tempfile import NamedTemporaryFile
 
 from fman import fs, show_status_message
@@ -67,7 +67,6 @@ class FtpFs(FileSystem):
         show_status_message('Loading %s...' % (path,))
         with FtpWrapper(self.scheme + path) as ftp:
             for name in ftp.conn.listdir(ftp.path):
-                #self.get_stats(pathjoin(path, name))
                 yield name
         show_status_message('Ready.', timeout_secs=0)
 
@@ -77,6 +76,10 @@ class FtpFs(FileSystem):
                 ftp.conn.rmtree(ftp.path)
             else:
                 ftp.conn.remove(ftp.path)
+        # Invalidate parent directory cache
+        parent_path = dirname(path)
+        if parent_path:
+            self.cache.remove(parent_path, 'iterdir')
 
     def move_to_trash(self, path):
         # ENOSYS: Function not implemented
@@ -85,6 +88,10 @@ class FtpFs(FileSystem):
     def mkdir(self, path):
         with FtpWrapper(self.scheme + path) as ftp:
             ftp.conn.makedirs(ftp.path)
+        # Invalidate parent directory cache
+        parent_path = dirname(path)
+        if parent_path:
+            self.cache.remove(parent_path, 'iterdir')
 
     def touch(self, path):
         if self.exists(path):
@@ -92,6 +99,10 @@ class FtpFs(FileSystem):
         with FtpWrapper(self.scheme + path) as ftp:
             with NamedTemporaryFile(delete=True) as tmp:
                 ftp.conn.upload(tmp.name, ftp.path)
+        # Invalidate parent directory cache
+        parent_path = dirname(path)
+        if parent_path:
+            self.cache.remove(parent_path, 'iterdir')
 
     def samefile(self, path1, path2):
         return path1 == path2
@@ -121,6 +132,13 @@ class FtpFs(FileSystem):
         else:
             raise UnsupportedOperation
 
+        # Invalidate destination directory cache if it's FTP
+        if is_ftp(dst_url):
+            _, dst_path = splitscheme(dst_url)
+            parent_path = dirname(dst_path)
+            if parent_path:
+                self.cache.remove(parent_path, 'iterdir')
+
     def move(self, src_url, dst_url):
         # Rename on same server
         src_scheme, src_path = splitscheme(src_url)
@@ -131,11 +149,30 @@ class FtpFs(FileSystem):
                 # Get destination path from dst_url
                 dst_ftp = FtpWrapper(dst_url)
                 ftp.conn.rename(ftp.path, dst_ftp.path)
-                return
+            # Invalidate both source and destination directory caches
+            src_parent = dirname(src_path)
+            dst_parent = dirname(dst_path)
+            if src_parent:
+                self.cache.remove(src_parent, 'iterdir')
+            if dst_parent and dst_parent != src_parent:
+                self.cache.remove(dst_parent, 'iterdir')
+            return
 
         fs.copy(src_url, dst_url)
         if fs.exists(src_url):
             fs.delete(src_url)
+
+        # Invalidate caches for FTP paths
+        if is_ftp(src_url):
+            _, src_path = splitscheme(src_url)
+            src_parent = dirname(src_path)
+            if src_parent:
+                self.cache.remove(src_parent, 'iterdir')
+        if is_ftp(dst_url):
+            _, dst_path = splitscheme(dst_url)
+            dst_parent = dirname(dst_path)
+            if dst_parent:
+                self.cache.remove(dst_parent, 'iterdir')
 
     def get_stats(self, path):
         with FtpWrapper(self.scheme + path) as ftp:
