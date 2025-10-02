@@ -152,3 +152,20 @@ class RemoveFtpHistory(DirectoryPaneCommand):
             history = \
                 load_json('FTP History.json', default={}, save_on_quit=True)
             history.clear()
+
+
+class ToggleFtpDetailedStats(DirectoryPaneCommand):
+    def __call__(self):
+        settings = load_json('FTP Settings.json', default={}, save_on_quit=True)
+
+        # Toggle the setting
+        current = settings.get('disable_detailed_stats', False)
+        settings['disable_detailed_stats'] = not current
+
+        # Show current state
+        if settings['disable_detailed_stats']:
+            show_alert('FTP detailed stats disabled. Only filenames will be shown.\n\n'
+                      'This provides faster directory listings but no file metadata.')
+        else:
+            show_alert('FTP detailed stats enabled. Full file information will be shown.\n\n'
+                      'This includes size, date, permissions, owner, and group.')
