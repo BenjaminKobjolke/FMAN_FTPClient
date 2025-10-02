@@ -7,6 +7,7 @@ from fman import \
 from fman.url import splitscheme
 
 from .filesystems import is_ftp
+from .ftp import FtpWrapper
 
 
 class OpenFtpLocation(DirectoryPaneCommand):
@@ -169,3 +170,18 @@ class ToggleFtpDetailedStats(DirectoryPaneCommand):
         else:
             show_alert('FTP detailed stats enabled. Full file information will be shown.\n\n'
                       'This includes size, date, permissions, owner, and group.')
+
+
+class CloseFtpConnections(DirectoryPaneCommand):
+    def __call__(self):
+        # Close all active FTP connections
+        FtpWrapper.close_all_connections()
+
+        # Navigate to home directory if currently viewing FTP
+        current_url = self.pane.get_path()
+        if is_ftp(current_url):
+            from os.path import expanduser
+            self.pane.set_path('file://' + expanduser('~'))
+
+        show_alert('All FTP connections have been closed.\n\n'
+                  'You have been disconnected from the FTP server.')

@@ -12,6 +12,7 @@ A [fman](https://fman.io/) FTP Client that uses the powerful [ftputil](https://f
 - **Remove ftp bookmark** (`remove_ftp_bookmark`): Remove a bookmarked URL.
 - **Open ftp history** (`open_ftp_history`): Open a previous URL.
 - **Remove ftp history** (`remove_ftp_history`): Remove the whole connection history.
+- **Close FTP connections** (`close_ftp_connections`): Manually close all active FTP connections and navigate to home directory.
 - **Toggle FTP detailed stats** (`toggle_ftp_detailed_stats`): Toggle between showing full file details (size, date, permissions) or just filenames for faster directory listings.
 
 ### Connection URL
@@ -46,10 +47,8 @@ This plugin includes several optimizations for better FTP performance:
 - Allow setting file/folder permissions, if applicable.
 
 ## Known issues
-- Currently there is no way to close an active connection.
 - When editing files, there is no way to know if a file has been edited. Must be uploaded manually through the popup.
 - **Create file** command shows an **editing files is not supported** alert after file creation, although file edition is enabled.
-- When in the root directory, the **Go Up** command raises an error.
 - **Move to trash** has been disabled on purpose, there is no Trash support.
 - Although there is -theoretically- **FTP_TLS** support, it has not been tested.
 - Passwords are stored in plain text when creating Bookmarks.
