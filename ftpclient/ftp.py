@@ -122,7 +122,15 @@ class FtpWrapper():
         """Remove a connection from the pool and close it."""
         if conn_hash in self.__conn_pool:
             try:
-                self.__conn_pool[conn_hash].close()
+                ftp_host = self.__conn_pool[conn_hash]
+                # Close all child connections first
+                for child in ftp_host._children[:]:
+                    try:
+                        child.close()
+                    except:
+                        pass
+                # Close the main connection
+                ftp_host.close()
             except:
                 pass
             del self.__conn_pool[conn_hash]
@@ -150,3 +158,23 @@ class FtpWrapper():
             excess_count = len(self.__conn_pool) - self.__MAX_POOL_SIZE
             for conn_hash, _ in sorted_conns[:excess_count]:
                 self._remove_connection(conn_hash)
+
+    @classmethod
+    def close_all_connections(cls):
+        """Close all connections in the pool. Useful for cleanup."""
+        with cls.__pool_lock:
+            for conn_hash in list(cls.__conn_pool.keys()):
+                try:
+                    ftp_host = cls.__conn_pool[conn_hash]
+                    # Close all child connections first
+                    for child in ftp_host._children[:]:
+                        try:
+                            child.close()
+                        except:
+                            pass
+                    # Close the main connection
+                    ftp_host.close()
+                except:
+                    pass
+            cls.__conn_pool.clear()
+            cls.__conn_timestamps.clear()
