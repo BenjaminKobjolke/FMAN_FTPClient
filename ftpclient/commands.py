@@ -188,6 +188,34 @@ class CloseFtpConnections(DirectoryPaneCommand):
                   'You have been disconnected from the FTP server.')
 
 
+def _get_ftp_bookmark_info(ftp_url):
+    """
+    Helper function to get bookmark information for an FTP URL.
+    Returns: (url_without_path, bookmark, bookmarks_dict, parsed_url) or (None, None, None, None) if invalid
+    """
+    # Check if we're on an FTP path
+    if not is_ftp(ftp_url):
+        show_alert('This command only works on FTP paths')
+        return None, None, None, None
+
+    # Parse the FTP URL
+    u = urlparse(ftp_url)
+    url_without_path = u._replace(path='').geturl()
+
+    # Load bookmarks
+    bookmarks = load_json('FTP Bookmarks.json', default={}, save_on_quit=True)
+
+    if url_without_path not in bookmarks:
+        show_alert(
+            'No bookmark found for this FTP server.\n\n'
+            'Please add a bookmark first using "Add Ftp Bookmark".'
+        )
+        return None, None, None, None
+
+    bookmark = bookmarks[url_without_path]
+    return url_without_path, bookmark, bookmarks, u
+
+
 class CopyFtpWebUrl(DirectoryPaneCommand):
     """Copy web URL for FTP file to clipboard"""
 
@@ -199,26 +227,10 @@ class CopyFtpWebUrl(DirectoryPaneCommand):
         else:
             ftp_url = self.pane.get_path()
 
-        # Check if we're on an FTP path
-        if not is_ftp(ftp_url):
-            show_alert('This command only works on FTP paths')
+        # Get bookmark info
+        url_without_path, bookmark, bookmarks, u = _get_ftp_bookmark_info(ftp_url)
+        if not bookmark:
             return
-
-        # Parse the FTP URL
-        u = urlparse(ftp_url)
-        url_without_path = u._replace(path='').geturl()
-
-        # Load bookmarks to find base web URL
-        bookmarks = load_json('FTP Bookmarks.json', default={}, save_on_quit=True)
-
-        if url_without_path not in bookmarks:
-            show_alert(
-                'No bookmark found for this FTP server.\n\n'
-                'Please add a bookmark first using "Add Ftp Bookmark".'
-            )
-            return
-
-        bookmark = bookmarks[url_without_path]
 
         # Check if base_url is configured (index 2 in bookmark array)
         base_web_url = None
@@ -251,6 +263,51 @@ class CopyFtpWebUrl(DirectoryPaneCommand):
         # Copy to clipboard
         set_text(web_url)
         show_status_message(f'Copied to clipboard: {web_url}')
+
+    def is_visible(self):
+        # Only show in command palette when on FTP path
+        return is_ftp(self.pane.get_path())
+
+
+class ChangeFtpWebUrl(DirectoryPaneCommand):
+    """Change the web URL for the current FTP bookmark"""
+
+    def __call__(self):
+        # Get current path
+        ftp_url = self.pane.get_path()
+
+        # Get bookmark info
+        url_without_path, bookmark, bookmarks, u = _get_ftp_bookmark_info(ftp_url)
+        if not bookmark:
+            return
+
+        # Get current web URL if set
+        current_web_url = ''
+        if len(bookmark) >= 3 and bookmark[2]:
+            current_web_url = bookmark[2]
+
+        # Prompt user for new web URL
+        new_web_url, ok = show_prompt(
+            'Enter the new base web URL for this FTP server\n'
+            '(e.g., https://projects.xida.de)\n'
+            'Leave empty to remove the web URL',
+            default=current_web_url
+        )
+
+        if not ok:
+            return
+
+        # Update the bookmark with new web URL
+        # Bookmark structure: [ftp_url, default_path, web_url]
+        if len(bookmark) >= 2:
+            bookmarks[url_without_path] = (bookmark[0], bookmark[1], new_web_url)
+        else:
+            bookmarks[url_without_path] = (bookmark[0], '', new_web_url)
+
+        if new_web_url:
+            show_alert(f'Web URL updated to:\n{new_web_url}')
+        else:
+            show_alert('Web URL has been removed')
 
     def is_visible(self):
         # Only show in command palette when on FTP path
