@@ -1,5 +1,6 @@
 from operator import itemgetter
 from urllib.parse import urlparse
+import webbrowser
 
 from fman import \
     DirectoryPaneCommand, NO, QuicksearchItem, YES, load_json, show_alert, \
@@ -239,10 +240,15 @@ class CopyFtpWebUrl(DirectoryPaneCommand):
 
         # If not configured, prompt user for it
         if not base_web_url:
+            # Get current web URL for prefill, or use default
+            current_web_url = ''
+            if len(bookmark) >= 3 and bookmark[2]:
+                current_web_url = bookmark[2]
+
             base_web_url, ok = show_prompt(
                 'Enter the base web URL for this FTP server\n'
-                '(e.g., https://projects.xida.de)',
-                default='https://'
+                '(e.g., https://example.com)',
+                default=current_web_url if current_web_url else 'https://'
             )
 
             if not (base_web_url and ok):
@@ -289,7 +295,7 @@ class ChangeFtpWebUrl(DirectoryPaneCommand):
         # Prompt user for new web URL
         new_web_url, ok = show_prompt(
             'Enter the new base web URL for this FTP server\n'
-            '(e.g., https://projects.xida.de)\n'
+            '(e.g., https://example.com)\n'
             'Leave empty to remove the web URL',
             default=current_web_url
         )
@@ -308,6 +314,67 @@ class ChangeFtpWebUrl(DirectoryPaneCommand):
             show_alert(f'Web URL updated to:\n{new_web_url}')
         else:
             show_alert('Web URL has been removed')
+
+    def is_visible(self):
+        # Only show in command palette when on FTP path
+        return is_ftp(self.pane.get_path())
+
+
+class OpenFtpWebUrl(DirectoryPaneCommand):
+    """Open web URL for FTP file in default browser"""
+
+    def __call__(self):
+        # Get current path or selected file
+        selected = self.pane.get_selected_files()
+        if selected:
+            ftp_url = selected[0]
+        else:
+            ftp_url = self.pane.get_path()
+
+        # Get bookmark info
+        url_without_path, bookmark, bookmarks, u = _get_ftp_bookmark_info(ftp_url)
+        if not bookmark:
+            return
+
+        # Check if base_url is configured (index 2 in bookmark array)
+        base_web_url = None
+        if len(bookmark) >= 3 and bookmark[2]:
+            base_web_url = bookmark[2]
+
+        # If not configured, prompt user for it
+        if not base_web_url:
+            # Get current web URL for prefill, or use default
+            current_web_url = ''
+            if len(bookmark) >= 3 and bookmark[2]:
+                current_web_url = bookmark[2]
+
+            base_web_url, ok = show_prompt(
+                'Enter the base web URL for this FTP server\n'
+                '(e.g., https://example.com)',
+                default=current_web_url if current_web_url else 'https://'
+            )
+
+            if not (base_web_url and ok):
+                return
+
+            # Save the web URL to bookmark (preserve existing values)
+            # Bookmark structure: [ftp_url, default_path, web_url]
+            if len(bookmark) >= 2:
+                bookmarks[url_without_path] = (bookmark[0], bookmark[1], base_web_url)
+            else:
+                bookmarks[url_without_path] = (bookmark[0], '', base_web_url)
+
+        ftp_path = u.path
+
+        # Construct web URL
+        web_url = base_web_url.rstrip('/') + ftp_path
+
+        # Open in default browser
+        try:
+            webbrowser.open(web_url)
+            show_status_message(f'Opened in browser: {web_url}')
+        except Exception as e:
+            show_alert(f'Failed to open browser: {str(e)}')
 
     def is_visible(self):
         # Only show in command palette when on FTP path
