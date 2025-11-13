@@ -3,7 +3,8 @@ from urllib.parse import urlparse
 
 from fman import \
     DirectoryPaneCommand, NO, QuicksearchItem, YES, load_json, show_alert, \
-    show_prompt, show_quicksearch
+    show_prompt, show_quicksearch, show_status_message
+from fman.clipboard import set_text
 from fman.url import splitscheme
 
 from .filesystems import is_ftp
@@ -185,3 +186,72 @@ class CloseFtpConnections(DirectoryPaneCommand):
 
         show_alert('All FTP connections have been closed.\n\n'
                   'You have been disconnected from the FTP server.')
+
+
+class CopyFtpWebUrl(DirectoryPaneCommand):
+    """Copy web URL for FTP file to clipboard"""
+
+    def __call__(self):
+        # Get current path or selected file
+        selected = self.pane.get_selected_files()
+        if selected:
+            ftp_url = selected[0]
+        else:
+            ftp_url = self.pane.get_path()
+
+        # Check if we're on an FTP path
+        if not is_ftp(ftp_url):
+            show_alert('This command only works on FTP paths')
+            return
+
+        # Parse the FTP URL
+        u = urlparse(ftp_url)
+        url_without_path = u._replace(path='').geturl()
+
+        # Load bookmarks to find base web URL
+        bookmarks = load_json('FTP Bookmarks.json', default={}, save_on_quit=True)
+
+        if url_without_path not in bookmarks:
+            show_alert(
+                'No bookmark found for this FTP server.\n\n'
+                'Please add a bookmark first using "Add Ftp Bookmark".'
+            )
+            return
+
+        bookmark = bookmarks[url_without_path]
+
+        # Check if base_url is configured (index 2 in bookmark array)
+        base_web_url = None
+        if len(bookmark) >= 3 and bookmark[2]:
+            base_web_url = bookmark[2]
+
+        # If not configured, prompt user for it
+        if not base_web_url:
+            base_web_url, ok = show_prompt(
+                'Enter the base web URL for this FTP server\n'
+                '(e.g., https://projects.xida.de)',
+                default='https://'
+            )
+
+            if not (base_web_url and ok):
+                return
+
+            # Save the web URL to bookmark (preserve existing values)
+            # Bookmark structure: [ftp_url, default_path, web_url]
+            if len(bookmark) >= 2:
+                bookmarks[url_without_path] = (bookmark[0], bookmark[1], base_web_url)
+            else:
+                bookmarks[url_without_path] = (bookmark[0], '', base_web_url)
+
+        ftp_path = u.path
+
+        # Construct web URL
+        web_url = base_web_url.rstrip('/') + ftp_path
+
+        # Copy to clipboard
+        set_text(web_url)
+        show_status_message(f'Copied to clipboard: {web_url}')
+
+    def is_visible(self):
+        # Only show in command palette when on FTP path
+        return is_ftp(self.pane.get_path())
