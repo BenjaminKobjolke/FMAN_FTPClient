@@ -12,6 +12,15 @@ from fman.url import join as urljoin, splitscheme
 
 from .ftp import FtpWrapper
 
+try:
+    import ftputil.error
+except ImportError:
+    import os
+    import sys
+    sys.path.append(
+        os.path.join(os.path.dirname(__file__), 'ftputil-3.4'))
+    import ftputil.error
+
 is_ftp = re.compile('^ftps?://').match
 is_file = re.compile('^file://').match
 
@@ -60,13 +69,21 @@ class FtpFs(FileSystem):
 
     @cached
     def exists(self, path):
-        with FtpWrapper(self.scheme + path) as ftp:
-            return ftp.conn.path.exists(ftp.path)
+        try:
+            with FtpWrapper(self.scheme + path) as ftp:
+                return ftp.conn.path.exists(ftp.path)
+        except (OSError, IOError, ConnectionError, ftputil.error.FTPError):
+            # If we can't connect, the path doesn't exist from our perspective
+            return False
 
     @cached
     def is_dir(self, path):
-        with FtpWrapper(self.scheme + path) as ftp:
-            return ftp.conn.path.isdir(ftp.path)
+        try:
+            with FtpWrapper(self.scheme + path) as ftp:
+                return ftp.conn.path.isdir(ftp.path)
+        except (OSError, IOError, ConnectionError, ftputil.error.FTPError):
+            # If we can't connect, assume it's not a directory
+            return False
 
     def iterdir(self, path):
         # XXX avoid errors on URLs without connection details
