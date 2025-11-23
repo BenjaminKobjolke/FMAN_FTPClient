@@ -6,7 +6,9 @@ from io import UnsupportedOperation
 from os.path import commonprefix, dirname, join as pathjoin
 from tempfile import NamedTemporaryFile
 
-from fman import fs, load_json, show_status_message
+import os
+
+from fman import fs, load_json, show_status_message, Task, submit_task
 from fman.fs import FileSystem, cached
 from fman.url import join as urljoin, splitscheme
 
@@ -132,19 +134,114 @@ class FtpFs(FileSystem):
             return
 
         if is_ftp(src_url) and is_ftp(dst_url):
-            with FtpWrapper(src_url) as src_ftp, \
-                    FtpWrapper(dst_url) as dst_ftp:
-                with src_ftp.conn.open(src_ftp.path, 'rb') as src, \
-                        dst_ftp.conn.open(dst_ftp.path, 'wb') as dst:
-                    dst_ftp.conn.copyfileobj(src, dst)
+            # FTP to FTP copy
+            src_ftp_wrapper = FtpWrapper(src_url)
+            dst_ftp_wrapper = FtpWrapper(dst_url)
+            filename = src_ftp_wrapper.path.split('/')[-1]
+
+            class FtpToFtpCopyTask(Task):
+                def __init__(task_self):
+                    super().__init__(f'Copying {filename}...')
+
+                def __call__(task_self):
+                    with src_ftp_wrapper as src_ftp, dst_ftp_wrapper as dst_ftp:
+                        # Get file size for progress
+                        try:
+                            file_size = src_ftp.conn.path.getsize(src_ftp.path)
+                        except:
+                            file_size = 0
+
+                        if file_size:
+                            task_self.set_size(file_size)
+
+                        transferred = [0]
+                        def progress_callback(chunk):
+                            task_self.check_canceled()
+                            transferred[0] += len(chunk)
+                            if file_size:
+                                task_self.set_progress(transferred[0])
+                                percent = int((transferred[0] / file_size) * 100)
+                                show_status_message(f'Copying... {percent}% ({transferred[0] // 1024} KB / {file_size // 1024} KB)')
+
+                        with src_ftp.conn.open(src_ftp.path, 'rb') as src, \
+                                dst_ftp.conn.open(dst_ftp.path, 'wb') as dst:
+                            dst_ftp.conn.copyfileobj(src, dst, callback=progress_callback)
+                        show_status_message('Ready.', timeout_secs=0)
+
+            task = FtpToFtpCopyTask()
+            submit_task(task)
+
         elif is_ftp(src_url) and is_file(dst_url):
+            # FTP download
             _, dst_path = splitscheme(dst_url)
-            with FtpWrapper(src_url) as src_ftp:
-                src_ftp.conn.download(src_ftp.path, dst_path)
+            ftp_wrapper = FtpWrapper(src_url)
+            filename = ftp_wrapper.path.split('/')[-1]
+
+            class FtpDownloadTask(Task):
+                def __init__(task_self):
+                    super().__init__(f'Downloading {filename}...')
+
+                def __call__(task_self):
+                    with ftp_wrapper as ftp:
+                        # Get file size for progress
+                        try:
+                            file_size = ftp.conn.path.getsize(ftp.path)
+                        except:
+                            file_size = 0
+
+                        if file_size:
+                            task_self.set_size(file_size)
+
+                        transferred = [0]
+                        def progress_callback(chunk):
+                            task_self.check_canceled()
+                            transferred[0] += len(chunk)
+                            if file_size:
+                                task_self.set_progress(transferred[0])
+                                percent = int((transferred[0] / file_size) * 100)
+                                show_status_message(f'Downloading... {percent}% ({transferred[0] // 1024} KB / {file_size // 1024} KB)')
+
+                        ftp.conn.download(ftp.path, dst_path, callback=progress_callback)
+                        show_status_message('Ready.', timeout_secs=0)
+
+            task = FtpDownloadTask()
+            submit_task(task)
+
         elif is_file(src_url) and is_ftp(dst_url):
+            # FTP upload
             _, src_path = splitscheme(src_url)
-            with FtpWrapper(dst_url) as dst_ftp:
-                dst_ftp.conn.upload(src_path, dst_ftp.path)
+            ftp_wrapper = FtpWrapper(dst_url)
+            filename = os.path.basename(src_path)
+
+            class FtpUploadTask(Task):
+                def __init__(task_self):
+                    super().__init__(f'Uploading {filename}...')
+
+                def __call__(task_self):
+                    with ftp_wrapper as ftp:
+                        # Get local file size for progress
+                        try:
+                            file_size = os.path.getsize(src_path)
+                        except:
+                            file_size = 0
+
+                        if file_size:
+                            task_self.set_size(file_size)
+
+                        transferred = [0]
+                        def progress_callback(chunk):
+                            task_self.check_canceled()
+                            transferred[0] += len(chunk)
+                            if file_size:
+                                task_self.set_progress(transferred[0])
+                                percent = int((transferred[0] / file_size) * 100)
+                                show_status_message(f'Uploading... {percent}% ({transferred[0] // 1024} KB / {file_size // 1024} KB)')
+
+                        ftp.conn.upload(src_path, ftp.path, callback=progress_callback)
+                        show_status_message('Ready.', timeout_secs=0)
+
+            task = FtpUploadTask()
+            submit_task(task)
         else:
             raise UnsupportedOperation
 
