@@ -108,13 +108,25 @@ class FtpWrapper():
             return self
 
     def __exit__(self, exc_type, exc_value, exc_tb):
-        # try:
-        #     self.__conn.quit()
-        # except:
-        #     pass
-        # finally:
-        #     self.__conn = None
+        # Clean up stale child connections after each operation
+        if self.hash in self.__conn_pool:
+            self._cleanup_children(self.__conn_pool[self.hash])
         return
+
+    def _cleanup_children(self, ftp_host):
+        """Close stale child connections that have finished their file transfers."""
+        stale_indices = []
+        for i, host in enumerate(ftp_host._children):
+            if host._file.closed:
+                try:
+                    host._session.close()
+                except:
+                    pass
+                stale_indices.append(i)
+
+        # Remove stale children in reverse order to preserve indices
+        for i in reversed(stale_indices):
+            del ftp_host._children[i]
 
     def _get_bookmark(self, url):
         u = urlparse(url)
