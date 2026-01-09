@@ -7,6 +7,7 @@ from fman import DirectoryPaneListener, NO, YES, fs, load_json, show_alert
 from fman.url import splitscheme
 
 from .filesystems import is_ftp
+from .ftp import FtpWrapper
 
 
 class FtpListener(DirectoryPaneListener):
@@ -47,3 +48,5 @@ class FtpListener(DirectoryPaneListener):
         history = \
             load_json('FTP History.json', default={}, save_on_quit=True)
         history[url] = history.get(url, 0) + 1
+        # Track last visited path for open connections feature
+        FtpWrapper.record_visited_path(url)

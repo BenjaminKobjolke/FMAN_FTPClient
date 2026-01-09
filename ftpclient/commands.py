@@ -144,6 +144,36 @@ class OpenFtpHistory(DirectoryPaneCommand):
                 yield QuicksearchItem(item, highlight=highlight)
 
 
+class NavigateToOpenFtpConnection(DirectoryPaneCommand):
+    def __call__(self):
+        connections = FtpWrapper.get_open_connections()
+        if not connections:
+            show_alert('No open FTP connections.\n\n'
+                      'Connect to an FTP server first using a bookmark or URL.')
+            return
+        result = show_quicksearch(self._get_items)
+        if result and result[1]:
+            # Look up the last visited path for the selected base URL
+            connections = FtpWrapper.get_open_connections()
+            for base_url, last_url in connections:
+                if base_url == result[1]:
+                    self.pane.set_path(last_url)
+                    return
+            # Fallback: navigate to base URL with root path
+            self.pane.set_path(result[1] + '/')
+
+    def _get_items(self, query):
+        connections = FtpWrapper.get_open_connections()
+        for base_url, last_url in connections:
+            try:
+                index = base_url.lower().index(query.lower())
+            except ValueError:
+                continue
+            else:
+                highlight = range(index, index + len(query))
+                yield QuicksearchItem(base_url, highlight=highlight)
+
+
 class RemoveFtpHistory(DirectoryPaneCommand):
     def __call__(self):
         choice = show_alert(

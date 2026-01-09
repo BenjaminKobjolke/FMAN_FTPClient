@@ -36,6 +36,8 @@ class FtpWrapper():
     __conn_pool = {}
     __conn_timestamps = {}
     __last_noop_check = {}
+    __conn_base_urls = {}  # hash → base_url (e.g., "ftp://user@host:21")
+    __last_visited_paths = {}  # base_url → last_full_url
     __pool_lock = threading.Lock()
     # Connection timeout: close connections idle for more than 2 minutes
     __CONNECTION_TIMEOUT = 120
@@ -105,6 +107,9 @@ class FtpWrapper():
             self.__conn_pool[self.hash] = ftp_host
             self.__conn_timestamps[self.hash] = current_time
             self.__last_noop_check[self.hash] = current_time
+            # Track base URL for this connection
+            base_url = self._get_base_url()
+            self.__conn_base_urls[self.hash] = base_url
             return self
 
     def __exit__(self, exc_type, exc_value, exc_tb):
@@ -146,6 +151,13 @@ class FtpWrapper():
             threading.get_ident(), self._host, self._port, self._user,
             self._passwd))
 
+    def _get_base_url(self):
+        """Return the base URL (without path) for this connection."""
+        if self._user:
+            return '%s%s@%s:%d' % (self._scheme, self._user, self._host, self._port)
+        else:
+            return '%s%s:%d' % (self._scheme, self._host, self._port)
+
     @property
     def conn(self):
         if self.hash not in self.__conn_pool:
@@ -176,6 +188,8 @@ class FtpWrapper():
                 del self.__conn_timestamps[conn_hash]
             if conn_hash in self.__last_noop_check:
                 del self.__last_noop_check[conn_hash]
+            if conn_hash in self.__conn_base_urls:
+                del self.__conn_base_urls[conn_hash]
 
     def _cleanup_stale_connections(self):
         """Remove connections that have been idle for too long."""
@@ -219,3 +233,29 @@ class FtpWrapper():
             cls.__conn_pool.clear()
             cls.__conn_timestamps.clear()
             cls.__last_noop_check.clear()
+            cls.__conn_base_urls.clear()
+            cls.__last_visited_paths.clear()
+
+    @classmethod
+    def record_visited_path(cls, url):
+        """Record the last visited path for a connection's base URL."""
+        u = urlparse(url)
+        if u.username:
+            base_url = '%s://%s@%s:%d' % (
+                u.scheme, u.username, u.hostname or '', u.port or 21)
+        else:
+            base_url = '%s://%s:%d' % (u.scheme, u.hostname or '', u.port or 21)
+        with cls.__pool_lock:
+            cls.__last_visited_paths[base_url] = url
+
+    @classmethod
+    def get_open_connections(cls):
+        """Return list of (base_url, last_visited_url) for active connections."""
+        with cls.__pool_lock:
+            # Get all unique base URLs from active connections
+            active_base_urls = set(cls.__conn_base_urls.values())
+            result = []
+            for base_url in active_base_urls:
+                last_url = cls.__last_visited_paths.get(base_url, base_url + '/')
+                result.append((base_url, last_url))
+            return result
