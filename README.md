@@ -12,8 +12,13 @@ A [fman](https://fman.io/) FTP Client that uses the powerful [ftputil](https://f
 - **Remove ftp bookmark** (`remove_ftp_bookmark`): Remove a bookmarked URL.
 - **Open ftp history** (`open_ftp_history`): Open a previous URL.
 - **Remove ftp history** (`remove_ftp_history`): Remove the whole connection history.
+- **Navigate to open FTP connection** (`navigate_to_open_ftp_connection`): Show list of active FTP connections and navigate to the last visited path.
+- **Close individual FTP connection** (`close_individual_ftp_connection`): Show list of active FTP connections and close the selected one.
 - **Close FTP connections** (`close_ftp_connections`): Manually close all active FTP connections and navigate to home directory.
 - **Toggle FTP detailed stats** (`toggle_ftp_detailed_stats`): Toggle between showing full file details (size, date, permissions) or just filenames for faster directory listings.
+- **Copy FTP web URL** (`copy_ftp_web_url`): Copy the web URL for the current FTP path or selected file to clipboard.
+- **Change FTP web URL** (`change_ftp_web_url`): Change the base web URL associated with the current FTP bookmark.
+- **Open FTP web URL** (`open_ftp_web_url`): Open the web URL for the current FTP path or selected file in the default browser.
 
 ### Connection URL
 
@@ -32,6 +37,8 @@ ftp[s]://[user[:password]@]ftp.host[:port][/path/to/dir]
 - Optional fast mode: disable detailed stats for faster listings (filename-only mode).
 - Bookmarks and connection history.
 - File view/edit support.
+- Navigate back to open FTP connections with last visited path memory.
+- Web URL mapping for FTP paths (copy, open in browser).
 
 ## Performance Optimizations
 
