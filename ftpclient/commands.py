@@ -164,9 +164,40 @@ class NavigateToOpenFtpConnection(DirectoryPaneCommand):
 
     def _get_items(self, query):
         connections = FtpWrapper.get_open_connections()
-        for base_url, last_url in connections:
+        for base_url, _ in connections:
             try:
-                index = base_url.lower().index(query.lower())
+                index = base_url.lower().index(query)
+            except ValueError:
+                continue
+            else:
+                highlight = range(index, index + len(query))
+                yield QuicksearchItem(base_url, highlight=highlight)
+
+
+class CloseIndividualFtpConnection(DirectoryPaneCommand):
+    def __call__(self):
+        connections = FtpWrapper.get_open_connections()
+        if not connections:
+            show_alert('No open FTP connections.\n\n'
+                      'There are no active connections to close.')
+            return
+        result = show_quicksearch(self._get_items)
+        if result and result[1]:
+            base_url = result[1]
+            # Close the selected connection
+            FtpWrapper.close_connection_by_url(base_url)
+            # If currently viewing that FTP, navigate to home
+            current_url = self.pane.get_path()
+            if is_ftp(current_url) and base_url in current_url:
+                from os.path import expanduser
+                self.pane.set_path('file://' + expanduser('~'))
+            show_alert('FTP connection closed:\n\n' + base_url)
+
+    def _get_items(self, query):
+        connections = FtpWrapper.get_open_connections()
+        for base_url, _ in connections:
+            try:
+                index = base_url.lower().index(query)
             except ValueError:
                 continue
             else:

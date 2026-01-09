@@ -240,11 +240,24 @@ class FtpWrapper():
     def record_visited_path(cls, url):
         """Record the last visited path for a connection's base URL."""
         u = urlparse(url)
-        if u.username:
-            base_url = '%s://%s@%s:%d' % (
-                u.scheme, u.username, u.hostname or '', u.port or 21)
+        url_without_path = u._replace(path='').geturl()
+
+        # Resolve bookmark alias to actual URL (same as _get_bookmark)
+        bookmarks = load_json('FTP Bookmarks.json', default={})
+        if url_without_path in bookmarks:
+            u = urlparse(bookmarks[url_without_path][0])._replace(path=u.path)
+
+        # Build base URL matching _get_base_url format
+        scheme = '%s://' % u.scheme
+        host = u.hostname or ''
+        port = u.port or 21
+        user = unquote(u.username or '')
+
+        if user:
+            base_url = '%s%s@%s:%d' % (scheme, user, host, port)
         else:
-            base_url = '%s://%s:%d' % (u.scheme, u.hostname or '', u.port or 21)
+            base_url = '%s%s:%d' % (scheme, host, port)
+
         with cls.__pool_lock:
             cls.__last_visited_paths[base_url] = url
 
@@ -259,3 +272,37 @@ class FtpWrapper():
                 last_url = cls.__last_visited_paths.get(base_url, base_url + '/')
                 result.append((base_url, last_url))
             return result
+
+    @classmethod
+    def close_connection_by_url(cls, base_url):
+        """Close a specific connection by its base URL."""
+        with cls.__pool_lock:
+            # Find all hashes that match this base_url
+            hashes_to_remove = [
+                h for h, url in cls.__conn_base_urls.items()
+                if url == base_url
+            ]
+            for conn_hash in hashes_to_remove:
+                if conn_hash in cls.__conn_pool:
+                    try:
+                        ftp_host = cls.__conn_pool[conn_hash]
+                        # Close all child connections first
+                        for child in ftp_host._children[:]:
+                            try:
+                                child.close()
+                            except:
+                                pass
+                        # Close the main connection
+                        ftp_host.close()
+                    except:
+                        pass
+                    del cls.__conn_pool[conn_hash]
+                    if conn_hash in cls.__conn_timestamps:
+                        del cls.__conn_timestamps[conn_hash]
+                    if conn_hash in cls.__last_noop_check:
+                        del cls.__last_noop_check[conn_hash]
+                    if conn_hash in cls.__conn_base_urls:
+                        del cls.__conn_base_urls[conn_hash]
+            # Also clear the last visited path for this connection
+            if base_url in cls.__last_visited_paths:
+                del cls.__last_visited_paths[base_url]
