@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile
 
 from core.commands import _open_local_files
 
-from fman import DirectoryPaneListener, NO, YES, fs, load_json, show_alert
+from fman import DirectoryPaneListener, NO, YES, fs, load_json, save_json, show_alert
 from fman.url import splitscheme
 
 from .filesystems import is_ftp
@@ -48,5 +48,6 @@ class FtpListener(DirectoryPaneListener):
         history = \
             load_json('FTP History.json', default={}, save_on_quit=True)
         history[url] = history.get(url, 0) + 1
+        save_json('FTP History.json')
         # Track last visited path for open connections feature
         FtpWrapper.record_visited_path(url)

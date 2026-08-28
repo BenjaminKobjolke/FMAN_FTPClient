@@ -107,6 +107,7 @@ class AddFtpBookmark(DirectoryPaneCommand):
             return
 
         bookmarks[alias] = (base, path)
+        save_json('FTP Bookmarks.json')
 
 
 class RemoveFtpBookmark(DirectoryPaneCommand):
@@ -122,6 +123,7 @@ class RemoveFtpBookmark(DirectoryPaneCommand):
                 bookmarks = \
                     load_json('FTP Bookmarks.json', default={}, save_on_quit=True)
                 bookmarks.pop(result[1], None)
+                save_json('FTP Bookmarks.json')
 
     def _get_items(self, query):
         bookmarks = \
@@ -230,6 +232,7 @@ class RemoveFtpHistory(DirectoryPaneCommand):
             history = \
                 load_json('FTP History.json', default={}, save_on_quit=True)
             history.clear()
+            save_json('FTP History.json')
 
 
 class ToggleFtpDetailedStats(DirectoryPaneCommand):
@@ -239,6 +242,7 @@ class ToggleFtpDetailedStats(DirectoryPaneCommand):
         # Toggle the setting
         current = settings.get('disable_detailed_stats', False)
         settings['disable_detailed_stats'] = not current
+        save_json('FTP Settings.json')
 
         # Show current state
         if settings['disable_detailed_stats']:
@@ -335,6 +339,7 @@ class CopyFtpWebUrl(DirectoryPaneCommand):
                 bookmarks[url_without_path] = (bookmark[0], bookmark[1], base_web_url)
             else:
                 bookmarks[url_without_path] = (bookmark[0], '', base_web_url)
+            save_json('FTP Bookmarks.json')
 
         ftp_path = u.path
 
@@ -384,6 +389,7 @@ class ChangeFtpWebUrl(DirectoryPaneCommand):
             bookmarks[url_without_path] = (bookmark[0], bookmark[1], new_web_url)
         else:
             bookmarks[url_without_path] = (bookmark[0], '', new_web_url)
+        save_json('FTP Bookmarks.json')
 
         if new_web_url:
             show_alert(f'Web URL updated to:\n{new_web_url}')
@@ -438,6 +444,7 @@ class OpenFtpWebUrl(DirectoryPaneCommand):
                 bookmarks[url_without_path] = (bookmark[0], bookmark[1], base_web_url)
             else:
                 bookmarks[url_without_path] = (bookmark[0], '', base_web_url)
+            save_json('FTP Bookmarks.json')
 
         ftp_path = u.path
 
