@@ -12,7 +12,7 @@ from fman import fs, load_json, show_status_message, Task, submit_task
 from fman.fs import FileSystem, cached
 from fman.url import join as urljoin, splitscheme
 
-from .ftp import FtpWrapper
+from .ftp import FtpConnectionError, FtpWrapper
 
 try:
     import ftputil.error
@@ -74,8 +74,12 @@ class FtpFs(FileSystem):
         try:
             with FtpWrapper(self.scheme + path) as ftp:
                 return ftp.conn.path.exists(ftp.path)
-        except (OSError, IOError, ConnectionError, ftputil.error.FTPError):
-            # If we can't connect, the path doesn't exist from our perspective
+        except FtpConnectionError:
+            # Connection/login problems are real errors: let them through so
+            # fman shows the reason instead of a misleading "not found".
+            raise
+        except ftputil.error.FTPError:
+            # The server answered, but the path is not there
             return False
 
     @cached
@@ -83,8 +87,10 @@ class FtpFs(FileSystem):
         try:
             with FtpWrapper(self.scheme + path) as ftp:
                 return ftp.conn.path.isdir(ftp.path)
-        except (OSError, IOError, ConnectionError, ftputil.error.FTPError):
-            # If we can't connect, assume it's not a directory
+        except FtpConnectionError:
+            raise
+        except ftputil.error.FTPError:
+            # The server answered, but the path is not a directory
             return False
 
     def iterdir(self, path):

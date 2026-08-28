@@ -3,13 +3,27 @@ from urllib.parse import urlparse
 import webbrowser
 
 from fman import \
-    DirectoryPaneCommand, NO, QuicksearchItem, YES, load_json, show_alert, \
-    show_prompt, show_quicksearch, show_status_message
+    DirectoryPaneCommand, NO, QuicksearchItem, YES, load_json, save_json, \
+    show_alert, show_prompt, show_quicksearch, show_status_message
 from fman.clipboard import set_text
 from fman.url import splitscheme
 
 from .filesystems import is_ftp
-from .ftp import FtpWrapper
+from .ftp import FtpConnectionError, FtpWrapper
+
+
+def _goto_ftp(pane, url):
+    """Navigate to `url`, showing a readable alert if the server refuses us."""
+    if not is_ftp(url):
+        pane.set_path(url)
+        return
+    try:
+        with FtpWrapper(url):
+            pass
+    except FtpConnectionError as e:
+        show_alert(str(e))
+        return
+    pane.set_path(url)
 
 
 class OpenFtpLocation(DirectoryPaneCommand):
@@ -18,7 +32,7 @@ class OpenFtpLocation(DirectoryPaneCommand):
             'Please enter the URL',
             default='ftp[s]://[user[:password]@]ftp.host[:port][/path/to/dir]')
         if text and ok:
-            self.pane.set_path(text)
+            _goto_ftp(self.pane, text)
             return
 
 
@@ -31,7 +45,7 @@ class OpenFtpBookmark(DirectoryPaneCommand):
                 load_json('FTP Bookmarks.json', default={})
             bookmark = bookmarks[result[1]]
             url = urlparse(result[1])._replace(path=bookmark[1]).geturl()
-            self.pane.set_path(url)
+            _goto_ftp(self.pane, url)
 
     def _get_items(self, query):
         bookmarks = \
@@ -127,7 +141,7 @@ class OpenFtpHistory(DirectoryPaneCommand):
     def __call__(self):
         result = show_quicksearch(self._get_items)
         if result and result[1]:
-            self.pane.set_path(result[1])
+            _goto_ftp(self.pane, result[1])
 
     def _get_items(self, query):
         bookmarks = \

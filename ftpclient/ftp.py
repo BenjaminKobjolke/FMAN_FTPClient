@@ -15,6 +15,10 @@ except ImportError:
     import ftputil
 
 
+class FtpConnectionError(OSError):
+    """Raised when the FTP server cannot be reached or refuses the login."""
+
+
 class FtpSession(ftplib.FTP):
     def __init__(self, host, port, user, password):
         super().__init__()
@@ -95,9 +99,22 @@ class FtpWrapper():
             # Create new connection
             session_factory = \
                 FtpTlsSession if self._scheme == 'ftps://' else FtpSession
-            ftp_host = ftputil.FTPHost(
-                self._host, self._port, self._user, self._passwd,
-                session_factory=session_factory)
+            try:
+                ftp_host = ftputil.FTPHost(
+                    self._host, self._port, self._user, self._passwd,
+                    session_factory=session_factory)
+            except Exception as e:
+                # ftputil appends a multi-line "Debugging info" block; the
+                # first line carries the actual server response.
+                reason = str(e).splitlines()[0] if str(e) else repr(e)
+                raise FtpConnectionError(
+                    'Could not connect to %s%s@%s:%d\n\n%s'
+                    % (self._scheme, self._user, self._host, self._port, reason)
+                ) from e
+
+            # ponytail: some servers reject `LIST -a` with 550; ftputil 4.x
+            # defaults this off too. Hidden files just won't be listed.
+            ftp_host.use_list_a_option = False
 
             # Increase stat cache size for large directories
             # Default is 5000, which causes cache eviction in large dirs
