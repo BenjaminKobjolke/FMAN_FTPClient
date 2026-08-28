@@ -90,6 +90,10 @@ class FtpFs(FileSystem):
 
     @cached
     def exists(self, path):
+        # XXX avoid errors on URLs without connection details: fman probes
+        # ancestor URLs up to the bare scheme root, which has no host.
+        if not path:
+            return False
         try:
             with FtpWrapper(self.scheme + path) as ftp:
                 return ftp.conn.path.exists(ftp.path)
@@ -103,6 +107,10 @@ class FtpFs(FileSystem):
 
     @cached
     def is_dir(self, path):
+        # XXX avoid errors on URLs without connection details: fman probes
+        # ancestor URLs up to the bare scheme root, which has no host.
+        if not path:
+            return False
         try:
             with FtpWrapper(self.scheme + path) as ftp:
                 return ftp.conn.path.isdir(ftp.path)
