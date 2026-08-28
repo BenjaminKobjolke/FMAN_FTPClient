@@ -104,3 +104,12 @@ venv.bak/
 .mypy_cache/
 .claude
 FTP Settings (Windows).json
+
+# Claude plans
+claude-plans
+
+# Temp commit message file
+tmp/commit_msg.tmp
+
+# Root-level plan files
+/PLAN_*.md
