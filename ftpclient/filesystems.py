@@ -12,7 +12,7 @@ from fman import fs, load_json, show_status_message, Task, submit_task
 from fman.fs import FileSystem, cached
 from fman.url import join as urljoin, splitscheme
 
-from .ftp import FtpConnectionError, FtpWrapper
+from .ftp import FtpConnectionError, FtpWrapper, invalidate_stat_caches
 
 try:
     import ftputil.error
@@ -43,6 +43,25 @@ class FtpFs(FileSystem):
                 'core.Name', 'core.Size', 'core.Modified',
                 'ftpclient.columns.Permissions', 'ftpclient.columns.Owner',
                 'ftpclient.columns.Group')
+
+    def _notify_written(self, path):
+        """
+        Tell fman that `path` now exists (or has new contents), so the pane
+        showing its directory updates by itself instead of waiting for Ctrl+R.
+
+        We drop our own cache entry directly instead of firing
+        notify_file_removed first: a removal event for a directory a pane is
+        showing sends that pane to its parent (SortedModel#_on_file_removed).
+        notify_file_changed is no use here either, its callbacks are only ever
+        registered for a pane's own directory, never for single files.
+        """
+        invalidate_stat_caches()
+        self.cache.clear(path)
+        fs.notify_file_added(self.scheme + path)
+
+    def _notify_removed(self, path):
+        invalidate_stat_caches()
+        fs.notify_file_removed(self.scheme + path)
 
     @cached
     def size_bytes(self, path):
@@ -112,14 +131,21 @@ class FtpFs(FileSystem):
                 ftp.conn.rmtree(ftp.path)
             else:
                 ftp.conn.remove(ftp.path)
+        self._notify_removed(path)
 
     def move_to_trash(self, path):
         # ENOSYS: Function not implemented
         raise OSError(errno.ENOSYS, "FTP has no Trash support")
 
     def mkdir(self, path):
+        # fman's makedirs(exist_ok=True) relies on this; ftputil's makedirs()
+        # would silently succeed, and the resulting notification would send a
+        # pane sitting in `path` to its parent.
+        if self.exists(path):
+            raise FileExistsError(errno.EEXIST, "File exists", path)
         with FtpWrapper(self.scheme + path) as ftp:
             ftp.conn.makedirs(ftp.path)
+        self._notify_written(path)
 
     def touch(self, path):
         if self.exists(path):
@@ -127,6 +153,7 @@ class FtpFs(FileSystem):
         with FtpWrapper(self.scheme + path) as ftp:
             with NamedTemporaryFile(delete=True) as tmp:
                 ftp.conn.upload(tmp.name, ftp.path)
+        self._notify_written(path)
 
     def samefile(self, path1, path2):
         return path1 == path2
@@ -134,7 +161,7 @@ class FtpFs(FileSystem):
     def copy(self, src_url, dst_url):
         # Recursive copy
         if fs.is_dir(src_url):
-            fs.mkdir(dst_url)
+            fs.makedirs(dst_url, exist_ok=True)
             for fname in fs.iterdir(src_url):
                 fs.copy(urljoin(src_url, fname), urljoin(dst_url, fname))
             return
@@ -173,6 +200,7 @@ class FtpFs(FileSystem):
                                 dst_ftp.conn.open(dst_ftp.path, 'wb') as dst:
                             dst_ftp.conn.copyfileobj(src, dst, callback=progress_callback)
                         show_status_message('Ready.', timeout_secs=0)
+                    self._notify_written(splitscheme(dst_url)[1])
 
             task = FtpToFtpCopyTask()
             submit_task(task)
@@ -209,6 +237,8 @@ class FtpFs(FileSystem):
 
                         ftp.conn.download(ftp.path, dst_path, callback=progress_callback)
                         show_status_message('Ready.', timeout_secs=0)
+                    # Local destination: nothing of ours to invalidate.
+                    fs.notify_file_added(dst_url)
 
             task = FtpDownloadTask()
             submit_task(task)
@@ -245,6 +275,7 @@ class FtpFs(FileSystem):
 
                         ftp.conn.upload(src_path, ftp.path, callback=progress_callback)
                         show_status_message('Ready.', timeout_secs=0)
+                    self._notify_written(splitscheme(dst_url)[1])
 
             task = FtpUploadTask()
             submit_task(task)
@@ -261,6 +292,8 @@ class FtpFs(FileSystem):
                 # Get destination path from dst_url
                 dst_ftp = FtpWrapper(dst_url)
                 ftp.conn.rename(ftp.path, dst_ftp.path)
+            self._notify_removed(src_path)
+            self._notify_written(dst_path)
             return
 
         fs.copy(src_url, dst_url)

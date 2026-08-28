@@ -36,6 +36,18 @@ class FtpTlsSession(ftplib.FTP_TLS):
         self.prot_p()
 
 
+# Bumped whenever this plugin changes something on a server. The connection
+# pool is keyed by thread id, so an upload done on a task thread cannot reach
+# the stat cache of the FTPHost the model thread reads listings from. Each
+# pooled host therefore drops its stat cache the next time it is used.
+_stat_cache_generation = 0
+
+
+def invalidate_stat_caches():
+    global _stat_cache_generation
+    _stat_cache_generation += 1
+
+
 class FtpWrapper():
     __conn_pool = {}
     __conn_timestamps = {}
@@ -179,7 +191,13 @@ class FtpWrapper():
     def conn(self):
         if self.hash not in self.__conn_pool:
             raise Exception('Not connected')
-        return self.__conn_pool[self.hash]
+        ftp_host = self.__conn_pool[self.hash]
+        # ponytail: one global generation, so any write drops every host's whole
+        # stat cache once. Per-path invalidate() if the extra LIST ever hurts.
+        if getattr(ftp_host, '_fman_cache_gen', -1) != _stat_cache_generation:
+            ftp_host._fman_cache_gen = _stat_cache_generation
+            ftp_host.stat_cache.clear()
+        return ftp_host
 
     @property
     def path(self):
