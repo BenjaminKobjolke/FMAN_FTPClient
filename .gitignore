@@ -113,3 +113,5 @@ tmp/commit_msg.tmp
 
 # Root-level plan files
 /PLAN_*.md
+PLAN.md
+HANDOFF.md
