@@ -25,7 +25,7 @@ class FtpListener(DirectoryPaneListener):
         tmp_url = 'file://' + tmp_path
 
         fs.copy(url, tmp_url)
-        _open_local_file(tmp_path)
+        _open_local_files([tmp_path], self.pane)
         choice = show_alert(
             'Upload modified file?',
             buttons=YES | NO,
