@@ -10,7 +10,7 @@ import os
 
 from fman import fs, load_json, show_status_message, Task, submit_task
 from fman.fs import FileSystem, cached
-from fman.url import join as urljoin, splitscheme
+from fman.url import basename, join as urljoin, splitscheme
 
 from .ftp import FtpConnectionError, FtpWrapper, invalidate_stat_caches
 
@@ -25,6 +25,70 @@ except ImportError:
 
 is_ftp = re.compile('^ftps?://').match
 is_file = re.compile('^file://').match
+
+
+class _Transfer(Task):
+    """
+    One file going to or from an FTP server.
+
+    The size is fixed up front: fman runs these as subtasks of its own copy or
+    move task, and a subtask cannot change its size once it has started.
+    """
+    def __init__(self, verb, name, size, transfer, on_done):
+        super().__init__('%s %s' % (verb, name), size=size)
+        self._verb = verb
+        self._transfer = transfer
+        self._on_done = on_done
+
+    def __call__(self):
+        size = self.get_size()
+        done = 0
+
+        def on_chunk(chunk):
+            nonlocal done
+            self.check_canceled()
+            done += len(chunk)
+            if size:
+                # min(): a file that grew since it was measured must not push
+                # the shared progress bar past the end.
+                self.set_progress(min(done, size))
+                show_status_message('%s... %d%% (%d KB / %d KB)' % (
+                    self._verb, done * 100 // size, done // 1024, size // 1024))
+
+        self._transfer(on_chunk)
+        show_status_message('Ready.', timeout_secs=0)
+        self._on_done()
+
+
+class _Sequence(Task):
+    """
+    Runs tasks in order under one progress dialog. A failure or a cancel stops
+    the rest, which keeps a move from deleting a source it did not copy.
+    """
+    def __init__(self, title, tasks):
+        super().__init__(title, size=sum(task.get_size() for task in tasks))
+        self._tasks = tasks
+
+    def __call__(self):
+        for task in self._tasks:
+            self.check_canceled()
+            self.run(task)
+
+
+def _remote_size(ftp_wrapper):
+    try:
+        with ftp_wrapper as ftp:
+            return ftp.conn.path.getsize(ftp.path)
+    except (OSError, ftputil.error.FTPError):
+        # Only costs the progress bar; the transfer reports the real error.
+        return 0
+
+
+def _local_size(path):
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
 
 
 class FtpFs(FileSystem):
@@ -167,144 +231,98 @@ class FtpFs(FileSystem):
         return path1 == path2
 
     def copy(self, src_url, dst_url):
-        # Recursive copy
-        if fs.is_dir(src_url):
-            fs.makedirs(dst_url, exist_ok=True)
-            for fname in fs.iterdir(src_url):
-                fs.copy(urljoin(src_url, fname), urljoin(dst_url, fname))
-            return
+        submit_task(_Sequence(
+            'Copying ' + basename(src_url),
+            self.prepare_copy(src_url, dst_url)))
 
-        if is_ftp(src_url) and is_ftp(dst_url):
-            # FTP to FTP copy
-            src_ftp_wrapper = FtpWrapper(src_url)
-            dst_ftp_wrapper = FtpWrapper(dst_url)
-            filename = src_ftp_wrapper.path.split('/')[-1]
-
-            class FtpToFtpCopyTask(Task):
-                def __init__(task_self):
-                    super().__init__(f'Copying {filename}...')
-
-                def __call__(task_self):
-                    with src_ftp_wrapper as src_ftp, dst_ftp_wrapper as dst_ftp:
-                        # Get file size for progress
-                        try:
-                            file_size = src_ftp.conn.path.getsize(src_ftp.path)
-                        except:
-                            file_size = 0
-
-                        if file_size:
-                            task_self.set_size(file_size)
-
-                        transferred = [0]
-                        def progress_callback(chunk):
-                            task_self.check_canceled()
-                            transferred[0] += len(chunk)
-                            if file_size:
-                                task_self.set_progress(transferred[0])
-                                percent = int((transferred[0] / file_size) * 100)
-                                show_status_message(f'Copying... {percent}% ({transferred[0] // 1024} KB / {file_size // 1024} KB)')
-
-                        with src_ftp.conn.open(src_ftp.path, 'rb') as src, \
-                                dst_ftp.conn.open(dst_ftp.path, 'wb') as dst:
-                            dst_ftp.conn.copyfileobj(src, dst, callback=progress_callback)
-                        show_status_message('Ready.', timeout_secs=0)
-                    self._notify_written(splitscheme(dst_url)[1])
-
-            task = FtpToFtpCopyTask()
-            submit_task(task)
-
-        elif is_ftp(src_url) and is_file(dst_url):
-            # FTP download
-            _, dst_path = splitscheme(dst_url)
-            ftp_wrapper = FtpWrapper(src_url)
-            filename = ftp_wrapper.path.split('/')[-1]
-
-            class FtpDownloadTask(Task):
-                def __init__(task_self):
-                    super().__init__(f'Downloading {filename}...')
-
-                def __call__(task_self):
-                    with ftp_wrapper as ftp:
-                        # Get file size for progress
-                        try:
-                            file_size = ftp.conn.path.getsize(ftp.path)
-                        except:
-                            file_size = 0
-
-                        if file_size:
-                            task_self.set_size(file_size)
-
-                        transferred = [0]
-                        def progress_callback(chunk):
-                            task_self.check_canceled()
-                            transferred[0] += len(chunk)
-                            if file_size:
-                                task_self.set_progress(transferred[0])
-                                percent = int((transferred[0] / file_size) * 100)
-                                show_status_message(f'Downloading... {percent}% ({transferred[0] // 1024} KB / {file_size // 1024} KB)')
-
-                        ftp.conn.download(ftp.path, dst_path, callback=progress_callback)
-                        show_status_message('Ready.', timeout_secs=0)
-                    # Local destination: nothing of ours to invalidate.
-                    fs.notify_file_added(dst_url)
-
-            task = FtpDownloadTask()
-            submit_task(task)
-
-        elif is_file(src_url) and is_ftp(dst_url):
-            # FTP upload
-            _, src_path = splitscheme(src_url)
-            ftp_wrapper = FtpWrapper(dst_url)
-            filename = os.path.basename(src_path)
-
-            class FtpUploadTask(Task):
-                def __init__(task_self):
-                    super().__init__(f'Uploading {filename}...')
-
-                def __call__(task_self):
-                    with ftp_wrapper as ftp:
-                        # Get local file size for progress
-                        try:
-                            file_size = os.path.getsize(src_path)
-                        except:
-                            file_size = 0
-
-                        if file_size:
-                            task_self.set_size(file_size)
-
-                        transferred = [0]
-                        def progress_callback(chunk):
-                            task_self.check_canceled()
-                            transferred[0] += len(chunk)
-                            if file_size:
-                                task_self.set_progress(transferred[0])
-                                percent = int((transferred[0] / file_size) * 100)
-                                show_status_message(f'Uploading... {percent}% ({transferred[0] // 1024} KB / {file_size // 1024} KB)')
-
-                        ftp.conn.upload(src_path, ftp.path, callback=progress_callback)
-                        show_status_message('Ready.', timeout_secs=0)
-                    self._notify_written(splitscheme(dst_url)[1])
-
-            task = FtpUploadTask()
-            submit_task(task)
-        else:
+    def prepare_copy(self, src_url, dst_url):
+        # Returns a list, not a generator: fman only tries the other file
+        # system when UnsupportedOperation is raised by this call itself.
+        if not all(is_ftp(url) or is_file(url) for url in (src_url, dst_url)):
             raise UnsupportedOperation
+        if not fs.is_dir(src_url):
+            return [self._prepare_file_copy(src_url, dst_url)]
+        tasks = [Task(
+            'Creating ' + basename(dst_url), fn=fs.makedirs, args=(dst_url,),
+            kwargs={'exist_ok': True})]
+        for fname in fs.iterdir(src_url):
+            tasks += self.prepare_copy(
+                urljoin(src_url, fname), urljoin(dst_url, fname))
+        return tasks
 
-    def move(self, src_url, dst_url):
-        # Rename on same server
+    def _prepare_file_copy(self, src_url, dst_url):
+        name = basename(src_url)
+        dst_path = splitscheme(dst_url)[1]
+
+        def written():
+            self._notify_written(dst_path)
+
+        if is_file(src_url):
+            src_path = splitscheme(src_url)[1]
+            ftp = FtpWrapper(dst_url)
+
+            def upload(on_chunk):
+                with ftp:
+                    ftp.conn.upload(src_path, ftp.path, callback=on_chunk)
+
+            return _Transfer(
+                'Uploading', name, _local_size(src_path), upload, written)
+
+        src_ftp = FtpWrapper(src_url)
+        if is_file(dst_url):
+            def download(on_chunk):
+                with src_ftp:
+                    src_ftp.conn.download(
+                        src_ftp.path, dst_path, callback=on_chunk)
+
+            # Local destination: nothing of ours to invalidate.
+            return _Transfer(
+                'Downloading', name, _remote_size(src_ftp), download,
+                lambda: fs.notify_file_added(dst_url))
+
+        dst_ftp = FtpWrapper(dst_url)
+
+        def ftp_to_ftp(on_chunk):
+            with src_ftp, dst_ftp:
+                with src_ftp.conn.open(src_ftp.path, 'rb') as src, \
+                        dst_ftp.conn.open(dst_ftp.path, 'wb') as dst:
+                    dst_ftp.conn.copyfileobj(src, dst, callback=on_chunk)
+
+        return _Transfer(
+            'Copying', name, _remote_size(src_ftp), ftp_to_ftp, written)
+
+    @staticmethod
+    def _is_rename(src_url, dst_url):
         src_scheme, src_path = splitscheme(src_url)
         dst_scheme, dst_path = splitscheme(dst_url)
-        if src_scheme == dst_scheme and commonprefix([src_path, dst_path]):
+        return src_scheme == dst_scheme and commonprefix([src_path, dst_path])
+
+    def move(self, src_url, dst_url):
+        if self._is_rename(src_url, dst_url):
             # Use single connection for same-server renames
             with FtpWrapper(src_url) as ftp:
-                # Get destination path from dst_url
-                dst_ftp = FtpWrapper(dst_url)
-                ftp.conn.rename(ftp.path, dst_ftp.path)
-            self._notify_removed(src_path)
-            self._notify_written(dst_path)
+                ftp.conn.rename(ftp.path, FtpWrapper(dst_url).path)
+            self._notify_removed(splitscheme(src_url)[1])
+            self._notify_written(splitscheme(dst_url)[1])
             return
+        for task in self.prepare_move(src_url, dst_url):
+            submit_task(task)
 
-        fs.copy(src_url, dst_url)
+    def prepare_move(self, src_url, dst_url):
+        if self._is_rename(src_url, dst_url):
+            # A rename is instant: fman's default task, which calls move(), is
+            # all the progress it needs.
+            return super().prepare_move(src_url, dst_url)
+        name = basename(src_url)
+        # The delete goes last in the same sequence, so a canceled or failed
+        # copy never reaches it.
+        return [_Sequence('Moving ' + name, [
+            *self.prepare_copy(src_url, dst_url),
+            Task('Deleting ' + name, fn=self._delete_source, args=(src_url,))
+        ])]
+
+    @staticmethod
+    def _delete_source(src_url):
         if fs.exists(src_url):
             fs.delete(src_url)
 
