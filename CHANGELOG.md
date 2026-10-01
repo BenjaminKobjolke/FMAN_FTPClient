@@ -1,3 +1,11 @@
+## Unreleased
+
+Bugfixes:
+
+- Transfers running longer than two minutes no longer fail with
+  `ConnectionResetError`: the idle-connection cleanup skips connections that
+  are still in use.
+
 ## [1.0.1](https://github.com/crimoniv/FTPClient/releases/tag/v1.0.1) (2018-06-20)
 
 Bugfixes:

@@ -1,3 +1,4 @@
+import collections
 import ftplib
 import threading
 import time
@@ -54,6 +55,10 @@ class FtpWrapper():
     __last_noop_check = {}
     __conn_base_urls = {}  # hash → base_url (e.g., "ftp://user@host:21")
     __last_visited_paths = {}  # base_url → last_full_url
+    # hash → number of open `with` blocks. The pool is cleaned from whichever
+    # thread connects next, so without this a transfer running longer than
+    # __CONNECTION_TIMEOUT is closed under its own feet by a pane listing.
+    __in_use = collections.Counter()
     __pool_lock = threading.Lock()
     # Connection timeout: close connections idle for more than 2 minutes
     __CONNECTION_TIMEOUT = 120
@@ -77,74 +82,85 @@ class FtpWrapper():
         with self.__pool_lock:
             # Clean up stale connections periodically
             self._cleanup_stale_connections()
-
-            if self.hash in self.__conn_pool:
-                conn = self.__conn_pool[self.hash]
-                current_time = time.time()
-
-                # Check if connection is still valid and not closed
-                if not conn.closed:
-                    # Only validate with NOOP if we haven't checked recently
-                    last_check = self.__last_noop_check.get(self.hash, 0)
-                    needs_validation = (current_time - last_check) > self.__NOOP_CHECK_INTERVAL
-
-                    if needs_validation:
-                        try:
-                            conn._session.voidcmd('NOOP')
-                            self.__last_noop_check[self.hash] = current_time
-                        except:
-                            # Connection is stale, remove it from pool
-                            self._remove_connection(self.hash)
-                            # Fall through to create new connection
-                        else:
-                            # NOOP succeeded, connection is valid
-                            self.__conn_timestamps[self.hash] = current_time
-                            return self
-                    else:
-                        # Skip NOOP, connection was validated recently
-                        self.__conn_timestamps[self.hash] = current_time
-                        return self
-                else:
-                    # Connection is closed, remove it from pool
-                    self._remove_connection(self.hash)
-
-            # Create new connection
-            session_factory = \
-                FtpTlsSession if self._scheme == 'ftps://' else FtpSession
-            try:
-                ftp_host = ftputil.FTPHost(
-                    self._host, self._port, self._user, self._passwd,
-                    session_factory=session_factory)
-            except Exception as e:
-                # ftputil appends a multi-line "Debugging info" block; the
-                # first line carries the actual server response.
-                reason = str(e).splitlines()[0] if str(e) else repr(e)
-                raise FtpConnectionError(
-                    'Could not connect to %s%s@%s:%d\n\n%s'
-                    % (self._scheme, self._user, self._host, self._port, reason)
-                ) from e
-
-            # ponytail: some servers reject `LIST -a` with 550; ftputil 4.x
-            # defaults this off too. Hidden files just won't be listed.
-            ftp_host.use_list_a_option = False
-
-            # Increase stat cache size for large directories
-            # Default is 5000, which causes cache eviction in large dirs
-            ftp_host.stat_cache.resize(20000)
-
-            current_time = time.time()
-            self.__conn_pool[self.hash] = ftp_host
-            self.__conn_timestamps[self.hash] = current_time
-            self.__last_noop_check[self.hash] = current_time
-            # Track base URL for this connection
-            base_url = self._get_base_url()
-            self.__conn_base_urls[self.hash] = base_url
+            self._connect()
+            self.__in_use[self.hash] += 1
             return self
 
-    def __exit__(self, exc_type, exc_value, exc_tb):
-        # Clean up stale child connections after each operation
+    def _connect(self):
+        """Make sure the pool holds a live connection for this wrapper."""
         if self.hash in self.__conn_pool:
-            self._cleanup_children(self.__conn_pool[self.hash])
+            conn = self.__conn_pool[self.hash]
+            current_time = time.time()
+
+            # Check if connection is still valid and not closed
+            if not conn.closed:
+                # Only validate with NOOP if we haven't checked recently
+                last_check = self.__last_noop_check.get(self.hash, 0)
+                needs_validation = (current_time - last_check) > self.__NOOP_CHECK_INTERVAL
+
+                if needs_validation:
+                    try:
+                        conn._session.voidcmd('NOOP')
+                        self.__last_noop_check[self.hash] = current_time
+                    except:
+                        # Connection is stale, remove it from pool
+                        self._remove_connection(self.hash)
+                        # Fall through to create new connection
+                    else:
+                        # NOOP succeeded, connection is valid
+                        self.__conn_timestamps[self.hash] = current_time
+                        return
+                else:
+                    # Skip NOOP, connection was validated recently
+                    self.__conn_timestamps[self.hash] = current_time
+                    return
+            else:
+                # Connection is closed, remove it from pool
+                self._remove_connection(self.hash)
+
+        # Create new connection
+        session_factory = \
+            FtpTlsSession if self._scheme == 'ftps://' else FtpSession
+        try:
+            ftp_host = ftputil.FTPHost(
+                self._host, self._port, self._user, self._passwd,
+                session_factory=session_factory)
+        except Exception as e:
+            # ftputil appends a multi-line "Debugging info" block; the
+            # first line carries the actual server response.
+            reason = str(e).splitlines()[0] if str(e) else repr(e)
+            raise FtpConnectionError(
+                'Could not connect to %s%s@%s:%d\n\n%s'
+                % (self._scheme, self._user, self._host, self._port, reason)
+            ) from e
+
+        # ponytail: some servers reject `LIST -a` with 550; ftputil 4.x
+        # defaults this off too. Hidden files just won't be listed.
+        ftp_host.use_list_a_option = False
+
+        # Increase stat cache size for large directories
+        # Default is 5000, which causes cache eviction in large dirs
+        ftp_host.stat_cache.resize(20000)
+
+        current_time = time.time()
+        self.__conn_pool[self.hash] = ftp_host
+        self.__conn_timestamps[self.hash] = current_time
+        self.__last_noop_check[self.hash] = current_time
+        # Track base URL for this connection
+        base_url = self._get_base_url()
+        self.__conn_base_urls[self.hash] = base_url
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        with self.__pool_lock:
+            self.__in_use[self.hash] -= 1
+            if not self.__in_use[self.hash]:
+                del self.__in_use[self.hash]
+            if self.hash in self.__conn_pool:
+                # The idle clock starts when the operation ends: a long
+                # transfer must not look idle the moment it finishes.
+                self.__conn_timestamps[self.hash] = time.time()
+                # Clean up stale child connections after each operation
+                self._cleanup_children(self.__conn_pool[self.hash])
         return
 
     def _cleanup_children(self, ftp_host):
@@ -229,19 +245,25 @@ class FtpWrapper():
     def _cleanup_stale_connections(self):
         """Remove connections that have been idle for too long."""
         current_time = time.time()
+        # A connection in use is never idle, however old its timestamp.
+        idle = {
+            conn_hash: timestamp
+            for conn_hash, timestamp in self.__conn_timestamps.items()
+            if conn_hash not in self.__in_use}
         stale_hashes = []
 
-        for conn_hash, timestamp in self.__conn_timestamps.items():
+        for conn_hash, timestamp in idle.items():
             if current_time - timestamp > self.__CONNECTION_TIMEOUT:
                 stale_hashes.append(conn_hash)
 
         for conn_hash in stale_hashes:
             self._remove_connection(conn_hash)
+            del idle[conn_hash]
 
         # Enforce max pool size (remove oldest connections)
         if len(self.__conn_pool) > self.__MAX_POOL_SIZE:
             sorted_conns = sorted(
-                self.__conn_timestamps.items(),
+                idle.items(),
                 key=lambda x: x[1]
             )
             excess_count = len(self.__conn_pool) - self.__MAX_POOL_SIZE
