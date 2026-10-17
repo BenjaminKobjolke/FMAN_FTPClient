@@ -6,6 +6,7 @@ A [fman](https://fman.io/) FTP Client that uses the powerful [ftputil](https://f
 
 ### Commands
 
+- **Edit FTP file** (F4 / Enter): Open an FTP file in the configured editor or default app. Saves upload automatically while the “Done editing” dialog is open; click OK when finished.
 - **Open ftp location** (`open_ftp_location`): Connect to a FTP server using the given URL.
 - **Add ftp bookmark** (`add_ftp_bookmark`): Bookmark current -or custom- URL.
 - **Open ftp bookmark** (`open_ftp_bookmark`): Open a bookmarked URL.
@@ -54,7 +55,6 @@ This plugin includes several optimizations for better FTP performance:
 - Allow setting file/folder permissions, if applicable.
 
 ## Known issues
-- When editing files, there is no way to know if a file has been edited. Must be uploaded manually through the popup.
 - **Create file** command shows an **editing files is not supported** alert after file creation, although file edition is enabled.
 - **Move to trash** has been disabled on purpose, there is no Trash support.
 - Although there is -theoretically- **FTP_TLS** support, it has not been tested.

@@ -1,5 +1,10 @@
 ## Unreleased
 
+Features:
+
+- F4 edits FTP files in the configured editor, with every save uploaded
+  automatically. Enter uses the same editing flow.
+
 Bugfixes:
 
 - Transfers running longer than two minutes no longer fail with
