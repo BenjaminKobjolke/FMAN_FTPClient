@@ -115,3 +115,7 @@ tmp/commit_msg.tmp
 /PLAN_*.md
 PLAN.md
 HANDOFF.md
+tickets/
+graphify-out/
+code_analysis_results/
+.reasonix/
