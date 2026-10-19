@@ -20,9 +20,15 @@ class FtpConnectionError(OSError):
     """Raised when the FTP server cannot be reached or refuses the login."""
 
 
+# Without it, a server that accepts a connection but never answers - e.g. once
+# it has as many sessions as it allows - keeps the thread waiting forever, and
+# canceling cannot interrupt it. Also applies to each read on a data transfer.
+SOCKET_TIMEOUT_SECS = 30
+
+
 class FtpSession(ftplib.FTP):
     def __init__(self, host, port, user, password):
-        super().__init__()
+        super().__init__(timeout=SOCKET_TIMEOUT_SECS)
         self.connect(host, port)
         # FIXME ftplib.error_temp: 421 Too many connections from the
         #       same IP address.
@@ -31,7 +37,7 @@ class FtpSession(ftplib.FTP):
 
 class FtpTlsSession(ftplib.FTP_TLS):
     def __init__(self, host, port, user, password):
-        super().__init__()
+        super().__init__(timeout=SOCKET_TIMEOUT_SECS)
         self.connect(host, port)
         self.login(user, password)
         self.prot_p()
@@ -82,14 +88,24 @@ class FtpWrapper():
         with self.__pool_lock:
             # Clean up stale connections periodically
             self._cleanup_stale_connections()
-            self._connect()
+            # Marked first, so no other thread's cleanup closes the connection
+            # while _connect() below checks or opens it.
             self.__in_use[self.hash] += 1
-            return self
+        # Outside the lock: talking to the server can take long, and the
+        # connection is this thread's own (see `hash`). Under the lock, one
+        # server that does not answer froze every other thread's FTP access.
+        try:
+            self._connect()
+        except BaseException:
+            with self.__pool_lock:
+                self._release()
+            raise
+        return self
 
     def _connect(self):
         """Make sure the pool holds a live connection for this wrapper."""
-        if self.hash in self.__conn_pool:
-            conn = self.__conn_pool[self.hash]
+        conn = self.__conn_pool.get(self.hash)
+        if conn is not None:
             current_time = time.time()
 
             # Check if connection is still valid and not closed
@@ -104,7 +120,8 @@ class FtpWrapper():
                         self.__last_noop_check[self.hash] = current_time
                     except:
                         # Connection is stale, remove it from pool
-                        self._remove_connection(self.hash)
+                        with self.__pool_lock:
+                            self._remove_connection(self.hash)
                         # Fall through to create new connection
                     else:
                         # NOOP succeeded, connection is valid
@@ -116,7 +133,8 @@ class FtpWrapper():
                     return
             else:
                 # Connection is closed, remove it from pool
-                self._remove_connection(self.hash)
+                with self.__pool_lock:
+                    self._remove_connection(self.hash)
 
         # Create new connection
         session_factory = \
@@ -143,18 +161,23 @@ class FtpWrapper():
         ftp_host.stat_cache.resize(20000)
 
         current_time = time.time()
-        self.__conn_pool[self.hash] = ftp_host
-        self.__conn_timestamps[self.hash] = current_time
-        self.__last_noop_check[self.hash] = current_time
-        # Track base URL for this connection
-        base_url = self._get_base_url()
-        self.__conn_base_urls[self.hash] = base_url
+        # Under the lock: other threads iterate these dicts while cleaning up.
+        with self.__pool_lock:
+            self.__conn_pool[self.hash] = ftp_host
+            self.__conn_timestamps[self.hash] = current_time
+            self.__last_noop_check[self.hash] = current_time
+            # Track base URL for this connection
+            self.__conn_base_urls[self.hash] = self._get_base_url()
+
+    def _release(self):
+        # Call holding __pool_lock.
+        self.__in_use[self.hash] -= 1
+        if not self.__in_use[self.hash]:
+            del self.__in_use[self.hash]
 
     def __exit__(self, exc_type, exc_value, exc_tb):
         with self.__pool_lock:
-            self.__in_use[self.hash] -= 1
-            if not self.__in_use[self.hash]:
-                del self.__in_use[self.hash]
+            self._release()
             if self.hash in self.__conn_pool:
                 # The idle clock starts when the operation ends: a long
                 # transfer must not look idle the moment it finishes.
