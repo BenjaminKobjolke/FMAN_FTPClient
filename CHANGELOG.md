@@ -9,7 +9,7 @@ Features:
 - Downloads and uploads transfer three files at once, each on its own
   connection. The progress dialog lists the workers; `−` and `+` remove or add
   one while the transfer runs, and a removed worker finishes its file first.
-  Needs an fman build with parallel transfer support.
+  Needs an fman++ build with parallel transfer support.
 - Moves go file by file: each source file is deleted right after its own copy,
   and a source folder once it is empty. A canceled or failed move leaves the
   files not yet moved in the source.

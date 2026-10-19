@@ -1,6 +1,6 @@
 # FTPClient
 
-A [fman](https://fman.io/) FTP Client that uses the powerful [ftputil](https://ftputil.sschwarzer.net) library.
+A [fman++](https://fman.io/) FTP Client that uses the powerful [ftputil](https://ftputil.sschwarzer.net) library.
 
 ## Usage
 
