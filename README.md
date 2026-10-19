@@ -50,8 +50,8 @@ This plugin includes several optimizations for better FTP performance:
 - **Large Directory Support**: Increased stat cache from 5,000 to 20,000 entries to prevent cache eviction in large directories.
 - **Smart Connection Management**: Automatically closes stale connections and limits pool size to prevent "too many connections" errors.
 - **Optional Fast Mode**: Toggle detailed stats on/off for faster directory listings when metadata isn't needed.
-- **Streaming Transfers**: Copies start while the folder tree is still being walked. The walk uses its own connection.
-- **Parallel Transfers**: Downloads and uploads run 3 files at once (`PARALLEL_TRANSFERS` in `ftpclient/filesystems.py`), each on its own connection. Add or remove workers with `+` / `−` in the progress dialog; a removed worker finishes its file first. FTP to FTP copies and moves stay sequential.
+- **Streaming Transfers**: Copies and moves start while the folder tree is still being walked. The walk uses its own connection.
+- **Parallel Transfers**: Downloads and uploads, copies and moves alike, run 3 files at once (`PARALLEL_TRANSFERS` in `ftpclient/filesystems.py`), each on its own connection. Add or remove workers with `+` / `−` in the progress dialog; a removed worker finishes its file first. A move deletes each source file right after its own copy, and a source folder once it is empty. FTP to FTP transfers stay sequential.
 
 ## TODO
 - Allow setting file/folder permissions, if applicable.
