@@ -159,6 +159,27 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     assert deleted == [src], 'a finished move deletes the source'
     assert submitted == ['Copying a.bin'], 'a move subtask opens no dialog'
 
+# A folder moves file by file, so fman's workers can share it. Creating the
+# destination holds back the files that go into it; the source folder goes
+# last, once the moves out of it are done, and only if nothing is left in it.
+FakeConn.path = types.SimpleNamespace(getsize=lambda path: SIZE)
+folder = 'ftp://example.com/dir'
+fs.makedirs = lambda *args, **kwargs: None
+fs.is_dir = lambda u: u == folder
+fs.iterdir = lambda u: ['x.bin'] if u == folder else []
+tasks = list(ftp_fs.prepare_move(folder, 'file:///tmp/dir'))
+assert [t.get_title() for t in tasks] == \
+    ['Creating dir', 'Moving x.bin', 'Deleting dir'], tasks
+assert tasks[0].blocks_later_tasks, 'files wait for their folder'
+assert tasks[-1].waits_for_earlier_tasks, 'the folder waits for its files'
+deleted.clear()
+tasks[-1]()
+assert deleted == [], 'a folder with files left in it is kept'
+fs.iterdir = lambda u: []
+tasks[-1]()
+assert deleted == [folder], 'an emptied folder is deleted'
+fs.is_dir = lambda url: False
+
 # Between FTP and this machine, fman runs several transfers at once. Between
 # two FTP servers it does not.
 local, remote = 'file:///tmp/a', 'ftp://example.com/a'
@@ -168,4 +189,5 @@ assert ftp_fs.get_parallel_transfers(local, remote) == parallel, 'upload'
 assert ftp_fs.get_parallel_transfers(remote, 'ftps://other/a') == 1
 
 print('ok: one dialog per transfer, source kept when a move fails, '
+      'folders move file by file, '
       'parallel transfers only between FTP and this machine')
