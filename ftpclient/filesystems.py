@@ -240,12 +240,16 @@ class FtpFs(FileSystem):
             list(self.prepare_copy(src_url, dst_url))))
 
     def prepare_copy(self, src_url, dst_url):
+        self._check_supported(src_url, dst_url)
+        return self._prepare_copy(src_url, dst_url)
+
+    @staticmethod
+    def _check_supported(src_url, dst_url):
         # Checked eagerly: fman only tries the other file system when
-        # UnsupportedOperation is raised by this call itself. The walk is a
-        # generator, so fman's copy starts transferring while it still runs.
+        # UnsupportedOperation is raised by prepare_copy/move itself. The walk
+        # is a generator, so fman starts transferring while it still runs.
         if not all(is_ftp(url) or is_file(url) for url in (src_url, dst_url)):
             raise UnsupportedOperation
-        return self._prepare_copy(src_url, dst_url)
 
     def get_parallel_transfers(self, src_url, dst_url):
         # FTP to FTP stays sequential: each worker would hold a connection to
@@ -258,12 +262,20 @@ class FtpFs(FileSystem):
         if not fs.is_dir(src_url):
             yield self._prepare_file_copy(src_url, dst_url)
             return
-        yield Task(
-            'Creating ' + basename(dst_url), fn=fs.makedirs, args=(dst_url,),
-            kwargs={'exist_ok': True})
+        yield self._prepare_mkdir(dst_url)
         for fname in fs.iterdir(src_url):
             yield from self._prepare_copy(
                 urljoin(src_url, fname), urljoin(dst_url, fname))
+
+    @staticmethod
+    def _prepare_mkdir(dst_url):
+        result = Task(
+            'Creating ' + basename(dst_url), fn=fs.makedirs, args=(dst_url,),
+            kwargs={'exist_ok': True})
+        # fman's parallel workers must not start the files that go into the
+        # folder before it exists.
+        result.blocks_later_tasks = True
+        return result
 
     def _prepare_file_copy(self, src_url, dst_url):
         name = basename(src_url)
@@ -320,26 +332,48 @@ class FtpFs(FileSystem):
             self._notify_removed(splitscheme(src_url)[1])
             self._notify_written(splitscheme(dst_url)[1])
             return
-        for task in self.prepare_move(src_url, dst_url):
-            submit_task(task)
+        submit_task(_Sequence(
+            'Moving ' + basename(src_url),
+            list(self.prepare_move(src_url, dst_url))))
 
     def prepare_move(self, src_url, dst_url):
         if self._is_rename(src_url, dst_url):
             # A rename is instant: fman's default task, which calls move(), is
             # all the progress it needs.
             return super().prepare_move(src_url, dst_url)
+        self._check_supported(src_url, dst_url)
+        return self._prepare_move(src_url, dst_url)
+
+    def _prepare_move(self, src_url, dst_url):
+        # File by file, so fman's workers can share a folder. Each source file
+        # goes right after its own copy; a failed copy keeps it.
         name = basename(src_url)
-        # The delete goes last in the same sequence, so a canceled or failed
-        # copy never reaches it.
-        return [_Sequence('Moving ' + name, [
-            *self.prepare_copy(src_url, dst_url),
-            Task('Deleting ' + name, fn=self._delete_source, args=(src_url,))
-        ])]
+        if not fs.is_dir(src_url):
+            yield _Sequence('Moving ' + name, [
+                self._prepare_file_copy(src_url, dst_url),
+                Task('Deleting ' + name, fn=self._delete_source,
+                     args=(src_url,))])
+            return
+        yield self._prepare_mkdir(dst_url)
+        for fname in fs.iterdir(src_url):
+            yield from self._prepare_move(
+                urljoin(src_url, fname), urljoin(dst_url, fname))
+        delete = Task(
+            'Deleting ' + name, fn=self._delete_if_empty, args=(src_url,))
+        # The folder is only empty once the moves out of it are done.
+        delete.waits_for_earlier_tasks = True
+        yield delete
 
     @staticmethod
     def _delete_source(src_url):
         if fs.exists(src_url):
             fs.delete(src_url)
+
+    @classmethod
+    def _delete_if_empty(cls, src_url):
+        # Files that failed or were skipped keep their folder.
+        if next(iter(fs.iterdir(src_url)), None) is None:
+            cls._delete_source(src_url)
 
     def get_stats(self, path):
         with FtpWrapper(self.scheme + path) as ftp:
