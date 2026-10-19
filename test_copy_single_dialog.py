@@ -159,4 +159,13 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     assert deleted == [src], 'a finished move deletes the source'
     assert submitted == ['Copying a.bin'], 'a move subtask opens no dialog'
 
-print('ok: one dialog per transfer, source kept when a move fails')
+# Between FTP and this machine, fman runs several transfers at once. Between
+# two FTP servers it does not.
+local, remote = 'file:///tmp/a', 'ftp://example.com/a'
+parallel = filesystems.PARALLEL_TRANSFERS
+assert ftp_fs.get_parallel_transfers(remote, local) == parallel, 'download'
+assert ftp_fs.get_parallel_transfers(local, remote) == parallel, 'upload'
+assert ftp_fs.get_parallel_transfers(remote, 'ftps://other/a') == 1
+
+print('ok: one dialog per transfer, source kept when a move fails, '
+      'parallel transfers only between FTP and this machine')

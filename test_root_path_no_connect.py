@@ -30,6 +30,7 @@ fman.fs = fman_fs
 fman_url = types.ModuleType('fman.url')
 fman_url.join = lambda *a: '/'.join(a)
 fman_url.splitscheme = lambda url: url.split('://', 1)
+fman_url.basename = lambda url: url.rsplit('/', 1)[-1]
 
 sys.modules['fman'] = fman
 sys.modules['fman.fs'] = fman_fs
