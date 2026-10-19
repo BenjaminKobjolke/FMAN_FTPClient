@@ -26,6 +26,10 @@ except ImportError:
 is_ftp = re.compile('^ftps?://').match
 is_file = re.compile('^file://').match
 
+# Files fman transfers at once between FTP and this machine. Each worker holds
+# its own connection, so servers that limit connections per IP may refuse more.
+PARALLEL_TRANSFERS = 3
+
 
 class _Transfer(Task):
     """
@@ -233,22 +237,33 @@ class FtpFs(FileSystem):
     def copy(self, src_url, dst_url):
         submit_task(_Sequence(
             'Copying ' + basename(src_url),
-            self.prepare_copy(src_url, dst_url)))
+            list(self.prepare_copy(src_url, dst_url))))
 
     def prepare_copy(self, src_url, dst_url):
-        # Returns a list, not a generator: fman only tries the other file
-        # system when UnsupportedOperation is raised by this call itself.
+        # Checked eagerly: fman only tries the other file system when
+        # UnsupportedOperation is raised by this call itself. The walk is a
+        # generator, so fman's copy starts transferring while it still runs.
         if not all(is_ftp(url) or is_file(url) for url in (src_url, dst_url)):
             raise UnsupportedOperation
+        return self._prepare_copy(src_url, dst_url)
+
+    def get_parallel_transfers(self, src_url, dst_url):
+        # FTP to FTP stays sequential: each worker would hold a connection to
+        # both servers.
+        if bool(is_ftp(src_url)) != bool(is_ftp(dst_url)):
+            return PARALLEL_TRANSFERS
+        return 1
+
+    def _prepare_copy(self, src_url, dst_url):
         if not fs.is_dir(src_url):
-            return [self._prepare_file_copy(src_url, dst_url)]
-        tasks = [Task(
+            yield self._prepare_file_copy(src_url, dst_url)
+            return
+        yield Task(
             'Creating ' + basename(dst_url), fn=fs.makedirs, args=(dst_url,),
-            kwargs={'exist_ok': True})]
+            kwargs={'exist_ok': True})
         for fname in fs.iterdir(src_url):
-            tasks += self.prepare_copy(
+            yield from self._prepare_copy(
                 urljoin(src_url, fname), urljoin(dst_url, fname))
-        return tasks
 
     def _prepare_file_copy(self, src_url, dst_url):
         name = basename(src_url)
