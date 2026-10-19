@@ -289,8 +289,12 @@ class FtpFs(FileSystem):
             ftp = FtpWrapper(dst_url)
 
             def upload(on_chunk):
+                # ftputil opens a second login per file; hosts limit logins per IP.
                 with ftp:
-                    ftp.conn.upload(src_path, ftp.path, callback=on_chunk)
+                    with open(src_path, 'rb') as src, \
+                            ftputil.error.ftplib_error_to_ftp_os_error:
+                        ftp.conn._session.storbinary(
+                            'STOR ' + ftp.path, src, callback=on_chunk)
 
             return _Transfer(
                 'Uploading', name, _local_size(src_path), upload, written)
@@ -298,9 +302,16 @@ class FtpFs(FileSystem):
         src_ftp = FtpWrapper(src_url)
         if is_file(dst_url):
             def download(on_chunk):
+                # ftputil opens a second login per file; hosts limit logins per IP.
                 with src_ftp:
-                    src_ftp.conn.download(
-                        src_ftp.path, dst_path, callback=on_chunk)
+                    with open(dst_path, 'wb') as dst, \
+                            ftputil.error.ftplib_error_to_ftp_os_error:
+                        def write_chunk(block):
+                            dst.write(block)
+                            on_chunk(block)
+
+                        src_ftp.conn._session.retrbinary(
+                            'RETR ' + src_ftp.path, write_chunk)
 
             # Local destination: nothing of ours to invalidate.
             return _Transfer(
