@@ -50,6 +50,8 @@ This plugin includes several optimizations for better FTP performance:
 - **Large Directory Support**: Increased stat cache from 5,000 to 20,000 entries to prevent cache eviction in large directories.
 - **Smart Connection Management**: Automatically closes stale connections and limits pool size to prevent "too many connections" errors.
 - **Optional Fast Mode**: Toggle detailed stats on/off for faster directory listings when metadata isn't needed.
+- **Streaming Transfers**: Copies start while the folder tree is still being walked. The walk uses its own connection.
+- **Parallel Transfers**: Downloads and uploads run 3 files at once (`PARALLEL_TRANSFERS` in `ftpclient/filesystems.py`), each on its own connection. Add or remove workers with `+` / `−` in the progress dialog; a removed worker finishes its file first. FTP to FTP copies and moves stay sequential.
 
 ## TODO
 - Allow setting file/folder permissions, if applicable.
@@ -58,6 +60,7 @@ This plugin includes several optimizations for better FTP performance:
 - **Create file** command shows an **editing files is not supported** alert after file creation, although file edition is enabled.
 - **Move to trash** has been disabled on purpose, there is no Trash support.
 - Although there is -theoretically- **FTP_TLS** support, it has not been tested.
+- Servers that limit connections per IP may refuse some of the connections a copy opens (one for the walk, one per worker). Press `−` in the progress dialog to use fewer.
 - Passwords are stored in plain text when creating Bookmarks.
 - Passwords are shown in plain text in the URL (this can be mitigated using Bookmarks).
 - Currently `ftputil` is loaded from a frozen copy included in the plugin source pointing to the **3.4** version. I have not found a better way to include it.
