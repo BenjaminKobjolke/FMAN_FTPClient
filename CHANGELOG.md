@@ -16,6 +16,9 @@ Features:
 
 Bugfixes:
 
+- Creating a new file on FTP no longer fails with `PermissionError`, and the
+  file opens in the configured editor. FTP panes update after deleting,
+  renaming or creating files and folders without pressing Ctrl+R.
 - Transfers running longer than two minutes no longer fail with
   `ConnectionResetError`: the idle-connection cleanup skips connections that
   are still in use.

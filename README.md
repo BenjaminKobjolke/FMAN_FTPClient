@@ -57,7 +57,6 @@ This plugin includes several optimizations for better FTP performance:
 - Allow setting file/folder permissions, if applicable.
 
 ## Known issues
-- **Create file** command shows an **editing files is not supported** alert after file creation, although file edition is enabled.
 - **Move to trash** has been disabled on purpose, there is no Trash support.
 - Although there is -theoretically- **FTP_TLS** support, it has not been tested.
 - Servers that limit connections per IP may refuse some of the connections a copy opens (one for the walk, one per worker). Press `−` in the progress dialog to use fewer.
