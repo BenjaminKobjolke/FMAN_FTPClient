@@ -3,12 +3,19 @@ from fman.fs import Column, query
 from .filesystems import is_ftp
 
 
+def _str(url, method):
+    try:
+        return str(query(url, method))
+    except OSError:
+        return ''
+
+
 class Permissions(Column):
     display_name = 'Permissions'
 
     def get_str(self, url):
         if is_ftp(url):
-            return str(query(url, 'get_permissions'))
+            return _str(url, 'get_permissions')
 
 
 class Owner(Column):
@@ -16,7 +23,7 @@ class Owner(Column):
 
     def get_str(self, url):
         if is_ftp(url):
-            return str(query(url, 'get_owner'))
+            return _str(url, 'get_owner')
 
 
 class Group(Column):
@@ -24,4 +31,4 @@ class Group(Column):
 
     def get_str(self, url):
         if is_ftp(url):
-            return str(query(url, 'get_group'))
+            return _str(url, 'get_group')
