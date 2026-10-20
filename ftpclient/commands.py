@@ -3,10 +3,10 @@ from urllib.parse import urlparse
 import webbrowser
 
 from fman import \
-    DirectoryPaneCommand, NO, QuicksearchItem, YES, load_json, save_json, \
+    DirectoryPaneCommand, NO, QuicksearchItem, YES, fs, load_json, save_json, \
     show_alert, show_prompt, show_quicksearch, show_status_message
 from fman.clipboard import set_text
-from fman.url import splitscheme
+from fman.url import basename, join, splitscheme
 
 from .filesystems import is_ftp
 from .ftp import FtpConnectionError, FtpWrapper
@@ -24,6 +24,28 @@ def _goto_ftp(pane, url):
         show_alert(str(e))
         return
     pane.set_path(url)
+
+
+class CreateAndEditFtpFile(DirectoryPaneCommand):
+    def __call__(self):
+        current_url = self.pane.get_file_under_cursor()
+        default_name = ''
+        if current_url and not fs.is_dir(current_url):
+            default_name = basename(current_url)
+
+        name, ok = show_prompt(
+            'Enter file name to create/edit:', default_name)
+        if not (name and ok):
+            return
+
+        url = join(self.pane.get_path(), name)
+        if not fs.exists(url):
+            fs.touch(url)
+        try:
+            self.pane.place_cursor_at(url)
+        except ValueError:
+            pass
+        self.pane.run_command('open_with_editor', {'url': url})
 
 
 class OpenFtpLocation(DirectoryPaneCommand):

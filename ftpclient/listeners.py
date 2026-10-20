@@ -86,6 +86,9 @@ def _show_upload_error(name, error):
 
 class FtpListener(DirectoryPaneListener):
     def on_command(self, command_name, args):
+        if command_name == 'create_and_edit_file' and \
+                is_ftp(self.pane.get_path()):
+            return 'create_and_edit_ftp_file', args
         if command_name not in ('open_file', 'open_with_editor'):
             return
 

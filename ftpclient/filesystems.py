@@ -1,16 +1,17 @@
 import errno
+import io
 import re
 import stat
 from datetime import datetime
 from io import UnsupportedOperation
 from os.path import commonprefix, dirname, join as pathjoin
-from tempfile import NamedTemporaryFile
 
 import os
 
 from fman import fs, load_json, show_status_message, Task, submit_task
 from fman.fs import FileSystem, cached
-from fman.url import basename, join as urljoin, splitscheme
+from fman.url import \
+    basename, dirname as urldirname, join as urljoin, splitscheme
 
 from .ftp import FtpConnectionError, FtpWrapper, invalidate_stat_caches
 
@@ -120,12 +121,19 @@ class FtpFs(FileSystem):
         We drop our own cache entry directly instead of firing
         notify_file_removed first: a removal event for a directory a pane is
         showing sends that pane to its parent (SortedModel#_on_file_removed).
-        notify_file_changed is no use here either, its callbacks are only ever
-        registered for a pane's own directory, never for single files.
+        notify_file_changed is not useful for a single file, but _reload_panes
+        uses it for the parent directory so panes showing that directory reload.
         """
         invalidate_stat_caches()
         self.cache.clear(path)
         fs.notify_file_added(self.scheme + path)
+
+    def _reload_panes(self, *paths):
+        # Same as Ctrl+R in every pane showing the folder of each path.
+        # ponytail: one LIST per call, so deleting or moving N files lists the
+        # folder N times; coalesce per folder if that ever gets slow.
+        for folder in {urldirname(self.scheme + path) for path in paths}:
+            fs.notify_file_changed(folder)
 
     def _notify_removed(self, path):
         invalidate_stat_caches()
@@ -208,6 +216,7 @@ class FtpFs(FileSystem):
             else:
                 ftp.conn.remove(ftp.path)
         self._notify_removed(path)
+        self._reload_panes(path)
 
     def move_to_trash(self, path):
         # ENOSYS: Function not implemented
@@ -222,14 +231,17 @@ class FtpFs(FileSystem):
         with FtpWrapper(self.scheme + path) as ftp:
             ftp.conn.makedirs(ftp.path)
         self._notify_written(path)
+        self._reload_panes(path)
 
     def touch(self, path):
         if self.exists(path):
             raise OSError(errno.EEXIST, "File exists")
         with FtpWrapper(self.scheme + path) as ftp:
-            with NamedTemporaryFile(delete=True) as tmp:
-                ftp.conn.upload(tmp.name, ftp.path)
+            with ftputil.error.ftplib_error_to_ftp_os_error:
+                ftp.conn._session.storbinary(
+                    'STOR ' + ftp.path, io.BytesIO())
         self._notify_written(path)
+        self._reload_panes(path)
 
     def samefile(self, path1, path2):
         return path1 == path2
@@ -342,6 +354,8 @@ class FtpFs(FileSystem):
                 ftp.conn.rename(ftp.path, FtpWrapper(dst_url).path)
             self._notify_removed(splitscheme(src_url)[1])
             self._notify_written(splitscheme(dst_url)[1])
+            self._reload_panes(
+                splitscheme(src_url)[1], splitscheme(dst_url)[1])
             return
         submit_task(_Sequence(
             'Moving ' + basename(src_url),
