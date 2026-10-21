@@ -117,5 +117,6 @@ PLAN.md
 HANDOFF.md
 tickets/
 graphify-out/
+coding-rules.json
 code_analysis_results/
 .reasonix/
