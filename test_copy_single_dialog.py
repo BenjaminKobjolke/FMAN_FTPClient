@@ -89,6 +89,7 @@ fman.fs = fs
 url = types.ModuleType('fman.url')
 url.join = lambda *parts: '/'.join(parts)
 url.basename = lambda u: u.rsplit('/', 1)[-1]
+url.dirname = lambda u: u.rsplit('/', 1)[0]
 url.splitscheme = lambda u: (u[:u.index('://') + 3], u[u.index('://') + 3:])
 fman.url = url
 
@@ -104,11 +105,17 @@ filesystems = importlib.import_module('ftpclient.filesystems')
 class FakeConn:
     fail = False
 
-    def upload(self, src, dst, callback=None):
+    def __init__(self):
+        self._session = self
+
+    def storbinary(self, command, src, callback=None):
         if self.fail:
             raise OSError('connection lost')
-        for _ in range(5):
-            callback(b'x' * (SIZE // 5))
+        while True:
+            block = src.read(SIZE // 5)
+            if not block:
+                break
+            callback(block)
 
 
 class FakeWrapper:

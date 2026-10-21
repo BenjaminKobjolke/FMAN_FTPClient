@@ -50,6 +50,7 @@ fs.notify_file_added = lambda url: None
 fman.fs = fs
 url = types.ModuleType('fman.url')
 url.basename = lambda value: value.rsplit('/', 1)[-1]
+url.dirname = lambda value: value.rsplit('/', 1)[0]
 url.join = lambda *parts: '/'.join(parts)
 url.splitscheme = lambda value: (
     value[:value.index('://') + 3], value[value.index('://') + 3:])
