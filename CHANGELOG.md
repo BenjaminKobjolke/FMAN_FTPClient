@@ -16,6 +16,7 @@ Features:
 
 Bugfixes:
 
+- Deleting on FTP now asks to delete permanently instead of offering the Recycle Bin.
 - Move to trash on FTP now deletes permanently instead of failing with "FTP has no Trash support".
 - Creating a new file on FTP no longer fails with `PermissionError`, and the
   file opens in the configured editor. FTP panes update after deleting,
