@@ -57,7 +57,7 @@ This plugin includes several optimizations for better FTP performance:
 - Allow setting file/folder permissions, if applicable.
 
 ## Known issues
-- **Move to trash** has been disabled on purpose, there is no Trash support.
+- **Move to trash** permanently deletes files and folders because FTP has no Trash.
 - Although there is -theoretically- **FTP_TLS** support, it has not been tested.
 - Servers that limit connections per IP may refuse some of the connections a copy opens (one for the walk, one per worker). Press `−` in the progress dialog to use fewer.
 - Passwords are stored in plain text when creating Bookmarks.

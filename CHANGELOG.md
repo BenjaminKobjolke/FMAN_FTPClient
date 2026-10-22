@@ -16,6 +16,7 @@ Features:
 
 Bugfixes:
 
+- Move to trash on FTP now deletes permanently instead of failing with "FTP has no Trash support".
 - Creating a new file on FTP no longer fails with `PermissionError`, and the
   file opens in the configured editor. FTP panes update after deleting,
   renaming or creating files and folders without pressing Ctrl+R.
