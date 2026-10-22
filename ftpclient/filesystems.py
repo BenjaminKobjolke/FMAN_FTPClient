@@ -219,8 +219,8 @@ class FtpFs(FileSystem):
         self._reload_panes(path)
 
     def move_to_trash(self, path):
-        # ENOSYS: Function not implemented
-        raise OSError(errno.ENOSYS, "FTP has no Trash support")
+        # FTP has no trash, so deleting is the closest thing.
+        self.delete(path)
 
     def mkdir(self, path):
         # fman's makedirs(exist_ok=True) relies on this; ftputil's makedirs()
