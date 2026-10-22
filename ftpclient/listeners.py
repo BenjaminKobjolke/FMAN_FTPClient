@@ -89,6 +89,10 @@ class FtpListener(DirectoryPaneListener):
         if command_name == 'create_and_edit_file' and \
                 is_ftp(self.pane.get_path()):
             return 'create_and_edit_ftp_file', args
+        # FTP has no trash, so confirm a permanent delete.
+        if command_name == 'move_to_trash' and \
+                is_ftp(self.pane.get_path()):
+            return 'delete_permanently', args
         if command_name not in ('open_file', 'open_with_editor'):
             return
 

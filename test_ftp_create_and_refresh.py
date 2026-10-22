@@ -198,6 +198,11 @@ assert listener.on_command('create_and_edit_file', {}) == \
     ('create_and_edit_ftp_file', {})
 listener.pane.get_path = lambda: 'file:///tmp'
 assert listener.on_command('create_and_edit_file', {}) is None
+listener.pane.get_path = lambda: 'ftp://example.com/dir'
+assert listener.on_command('move_to_trash', {}) == \
+    ('delete_permanently', {})
+listener.pane.get_path = lambda: 'file:///tmp'
+assert listener.on_command('move_to_trash', {}) is None
 
 prompt_calls = []
 fman.show_prompt = lambda prompt, default='': (
