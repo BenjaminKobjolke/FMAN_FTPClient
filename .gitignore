@@ -119,4 +119,5 @@ tickets/
 graphify-out/
 coding-rules.json
 code_analysis_results/
+/tools/analyze_code_config.bat
 .reasonix/

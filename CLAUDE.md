@@ -26,3 +26,19 @@ Do not inline rules back into this file and do not use `@import` for either file
 they are intentionally referenced, not imported.
 
 This project's code directory is ftpclient/ (graphify scope; the vendored ftputil-3.4/ is excluded by ftpclient/.graphifyignore).
+
+## Code Analysis
+
+Run changed-files analysis after an implementation or bug fix:
+
+```powershell
+powershell -Command "cd 'C:\Users\XIDA\AppData\Roaming\fman\Plugins\User\FMAN_FTPClient'; cmd /c '.\tools\analyze_changed_and_new_files.bat'"
+```
+
+It uses `--only-changed` to report findings for new or modified files relative to Git `HEAD` and exits non-zero when it reports findings. Use the full-project analyzer for an explicit project-wide audit:
+
+```powershell
+powershell -Command "cd 'C:\Users\XIDA\AppData\Roaming\fman\Plugins\User\FMAN_FTPClient'; cmd /c '.\tools\analyze_code.bat'"
+```
+
+Reports are written as per-rule CSV files under `code_analysis_results/`. `tools/analyze_code_config.example.bat` documents the local analyzer path; `tools/analyze_code_config.bat` is machine-specific and ignored by Git.
