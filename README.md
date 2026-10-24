@@ -1,15 +1,15 @@
 # FTPClient
 
-A [fman++](https://fman.io/) FTP Client that uses the powerful [ftputil](https://ftputil.sschwarzer.net) library.
+A [fman++](https://fman.io/) FTP and SFTP client. FTP support uses the powerful [ftputil](https://ftputil.sschwarzer.net) library.
 
 ## Usage
 
 ### Commands
 
-- **Edit FTP file** (F4 / Enter): Open an FTP file in the configured editor or default app. Saves upload automatically while the “Done editing” dialog is open; click OK when finished.
-- **Open ftp location** (`open_ftp_location`): Connect to a FTP server using the given URL.
-- **Add ftp bookmark** (`add_ftp_bookmark`): Bookmark current -or custom- URL.
-- **Open ftp bookmark** (`open_ftp_bookmark`): Open a bookmarked URL.
+- **Edit remote file** (F4 / Enter): Open an FTP or SFTP file in the configured editor or default app. Saves upload automatically while the “Done editing” dialog is open; click OK when finished.
+- **Open ftp location** (`open_ftp_location`): Connect to an FTP, FTPS or SFTP server using its URL.
+- **Add ftp bookmark** (`add_ftp_bookmark`): Bookmark the current or a custom FTP/SFTP URL.
+- **Open ftp bookmark** (`open_ftp_bookmark`): Open a bookmarked FTP/SFTP URL.
 - **Remove ftp bookmark** (`remove_ftp_bookmark`): Remove a bookmarked URL.
 - **Open ftp history** (`open_ftp_history`): Open a previous URL.
 - **Remove ftp history** (`remove_ftp_history`): Remove the whole connection history.
@@ -23,10 +23,11 @@ A [fman++](https://fman.io/) FTP Client that uses the powerful [ftputil](https:/
 
 ### Connection URL
 
-The URL must follow the format below:
+Use one of these URL formats:
 
 ```
 ftp[s]://[user[:password]@]ftp.host[:port][/path/to/dir]
+sftp://[user[:password]@]sftp.host[:port][/path/to/dir]
 ```
 
 ## Features
@@ -36,32 +37,39 @@ ftp[s]://[user[:password]@]ftp.host[:port][/path/to/dir]
 - Optimized NOOP validation caching for reduced network overhead.
 - Large directory support with increased stat cache (up to 20,000 files).
 - Optional fast mode: disable detailed stats for faster listings (filename-only mode).
-- Bookmarks and connection history.
-- File view/edit support.
+- FTP/SFTP bookmarks and connection history.
+- FTP/SFTP file view and edit support, with saved changes uploaded automatically.
 - Navigate back to open FTP connections with last visited path memory.
 - Web URL mapping for FTP paths (copy, open in browser).
 
 ## Performance Optimizations
 
-This plugin includes several optimizations for better FTP performance:
+This plugin includes several optimizations for better remote file access performance:
 
-- **Connection Pooling**: Reuses FTP connections instead of creating new ones for each operation.
+- **Connection Pooling**: Reuses FTP and SFTP connections instead of creating new ones for each operation.
 - **NOOP Validation Caching**: Only validates connections every 5 seconds instead of on every operation (~99% reduction in validation overhead).
 - **Large Directory Support**: Increased stat cache from 5,000 to 20,000 entries to prevent cache eviction in large directories.
 - **Smart Connection Management**: Automatically closes stale connections and limits pool size to prevent "too many connections" errors.
 - **Optional Fast Mode**: Toggle detailed stats on/off for faster directory listings when metadata isn't needed.
 - **Streaming Transfers**: Copies and moves start while the folder tree is still being walked. The walk uses its own connection.
-- **Parallel Transfers**: Downloads and uploads, copies and moves alike, run 3 files at once (`PARALLEL_TRANSFERS` in `ftpclient/filesystems.py`), each on its own connection. Add or remove workers with `+` / `−` in the progress dialog; a removed worker finishes its file first. A move deletes each source file right after its own copy, and a source folder once it is empty. FTP to FTP transfers stay sequential.
+- **Parallel Transfers**: Downloads and uploads, copies and moves alike, run 3 files at once (`PARALLEL_TRANSFERS` in `ftpclient/filesystems.py`), each on its own connection. Add or remove workers with `+` / `−` in the progress dialog; a removed worker finishes its file first. A move deletes each source file right after its own copy, and a source folder once it is empty. Server-to-server transfers stay sequential.
+
+## SFTP logins and host keys
+
+- SSH keys and Pageant/SSH agent logins are tried automatically, without asking for a password.
+- A password entered in the connection prompt is saved in Windows Credential Manager for later connections. A password included in the URL is used for that connection and is not saved. Avoid putting passwords in URLs or bookmarks because URLs can expose them as plain text.
+- Server keys are checked against `~/.ssh/known_hosts`. The first connection shows the server's SHA256 fingerprint and asks whether to trust it. Accepting appends the key to `known_hosts`; a changed key is rejected until that file is corrected.
+- `~/.ssh/config` aliases and `IdentityFile` entries are not read. Paramiko searches the standard `~/.ssh/id_*` keys and uses available SSH agents.
+- Paramiko and its pinned dependencies are vendored under `ftpclient/vendor-sftp/`: Paramiko 5.1.0, cryptography 50.0.2, bcrypt 5.0.0, PyNaCl 1.6.2, cffi 2.1.1, pycparser 3.12 and invoke 3.0.3. `tools/vendor_sftp_deps.bat` downloads the pinned Windows wheels to reproduce that folder when updating the bundled packages.
 
 ## TODO
 - Allow setting file/folder permissions, if applicable.
 
 ## Known issues
-- **Move to trash** permanently deletes files and folders because FTP has no Trash.
+- **Move to trash** permanently deletes files and folders because FTP and SFTP have no Trash.
 - Although there is -theoretically- **FTP_TLS** support, it has not been tested.
 - Servers that limit connections per IP may refuse some of the connections a copy opens (one for the walk, one per worker). Press `−` in the progress dialog to use fewer.
-- Passwords are stored in plain text when creating Bookmarks.
-- Passwords are shown in plain text in the URL (this can be mitigated using Bookmarks).
+- A password typed into a connection URL is visible in plain text; prompted SFTP passwords are saved in Windows Credential Manager.
 - Currently `ftputil` is loaded from a frozen copy included in the plugin source pointing to the **3.4** version. I have not found a better way to include it.
 
 ## History
