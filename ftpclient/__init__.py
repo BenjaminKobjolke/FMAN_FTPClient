@@ -5,5 +5,5 @@ from .commands import \
     CreateAndEditFtpFile, OpenFtpBookmark, OpenFtpHistory, \
     OpenFtpLocation, OpenFtpWebUrl, \
     RemoveFtpBookmark, RemoveFtpHistory, ToggleFtpDetailedStats
-from .filesystems import FtpFs, FtpsFs
+from .filesystems import FtpFs, FtpsFs, SftpFs
 from .listeners import FtpListener

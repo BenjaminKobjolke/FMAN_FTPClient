@@ -2,6 +2,7 @@ import collections
 import ftplib
 import threading
 import time
+from typing import BinaryIO, Callable
 from urllib.parse import unquote, urlparse
 
 from fman import load_json
@@ -24,6 +25,7 @@ class FtpConnectionError(OSError):
 # it has as many sessions as it allows - keeps the thread waiting forever, and
 # canceling cannot interrupt it. Also applies to each read on a data transfer.
 SOCKET_TIMEOUT_SECS = 30
+DEFAULT_PORTS: dict[str, int] = {'ftp': 21, 'ftps': 21, 'sftp': 22}
 
 
 class FtpSession(ftplib.FTP):
@@ -80,7 +82,7 @@ class FtpWrapper():
         self._scheme = '%s://' % (u.scheme,)
         self._path = u.path or '/'
         self._host = u.hostname or ''
-        self._port = u.port or 21
+        self._port = u.port or DEFAULT_PORTS.get(u.scheme, 21)
         self._user = unquote(u.username or '')
         self._passwd = unquote(u.password or '')
 
@@ -107,36 +109,39 @@ class FtpWrapper():
         conn = self.__conn_pool.get(self.hash)
         if conn is not None:
             current_time = time.time()
-
-            # Check if connection is still valid and not closed
-            if not conn.closed:
-                # Only validate with NOOP if we haven't checked recently
-                last_check = self.__last_noop_check.get(self.hash, 0)
-                needs_validation = (current_time - last_check) > self.__NOOP_CHECK_INTERVAL
-
-                if needs_validation:
-                    try:
-                        conn._session.voidcmd('NOOP')
-                        self.__last_noop_check[self.hash] = current_time
-                    except:
-                        # Connection is stale, remove it from pool
-                        with self.__pool_lock:
-                            self._remove_connection(self.hash)
-                        # Fall through to create new connection
-                    else:
-                        # NOOP succeeded, connection is valid
-                        self.__conn_timestamps[self.hash] = current_time
-                        return
-                else:
-                    # Skip NOOP, connection was validated recently
-                    self.__conn_timestamps[self.hash] = current_time
-                    return
+            if self._check_alive(conn):
+                self.__conn_timestamps[self.hash] = current_time
+                return
             else:
-                # Connection is closed, remove it from pool
                 with self.__pool_lock:
                     self._remove_connection(self.hash)
 
-        # Create new connection
+        host = self._open_host()
+        current_time = time.time()
+        # Under the lock: other threads iterate these dicts while cleaning up.
+        with self.__pool_lock:
+            self.__conn_pool[self.hash] = host
+            self.__conn_timestamps[self.hash] = current_time
+            self.__last_noop_check[self.hash] = current_time
+            self.__conn_base_urls[self.hash] = self._get_base_url()
+
+    def _check_alive(self, host):
+        """Return whether a pooled FTP host is still usable."""
+        if host.closed:
+            return False
+        current_time = time.time()
+        last_check = self.__last_noop_check.get(self.hash, 0)
+        if current_time - last_check <= self.__NOOP_CHECK_INTERVAL:
+            return True
+        try:
+            host._session.voidcmd('NOOP')
+        except Exception:
+            return False
+        self.__last_noop_check[self.hash] = current_time
+        return True
+
+    def _open_host(self):
+        """Open an FTP host for this wrapper."""
         session_factory = \
             FtpTlsSession if self._scheme == 'ftps://' else FtpSession
         try:
@@ -159,15 +164,7 @@ class FtpWrapper():
         # Increase stat cache size for large directories
         # Default is 5000, which causes cache eviction in large dirs
         ftp_host.stat_cache.resize(20000)
-
-        current_time = time.time()
-        # Under the lock: other threads iterate these dicts while cleaning up.
-        with self.__pool_lock:
-            self.__conn_pool[self.hash] = ftp_host
-            self.__conn_timestamps[self.hash] = current_time
-            self.__last_noop_check[self.hash] = current_time
-            # Track base URL for this connection
-            self.__conn_base_urls[self.hash] = self._get_base_url()
+        return ftp_host
 
     def _release(self):
         # Call holding __pool_lock.
@@ -183,8 +180,12 @@ class FtpWrapper():
                 # transfer must not look idle the moment it finishes.
                 self.__conn_timestamps[self.hash] = time.time()
                 # Clean up stale child connections after each operation
-                self._cleanup_children(self.__conn_pool[self.hash])
+                self._after_use(self.__conn_pool[self.hash])
         return
+
+    def _after_use(self, host):
+        """Clean up resources left by a completed FTP operation."""
+        self._cleanup_children(host)
 
     def _cleanup_children(self, ftp_host):
         """Close stale child connections that have finished their file transfers."""
@@ -216,15 +217,19 @@ class FtpWrapper():
     @property
     def hash(self):
         return hash((
-            threading.get_ident(), self._host, self._port, self._user,
+            threading.get_ident(), self._scheme, self._host, self._port, self._user,
             self._passwd))
+
+    @staticmethod
+    def _format_base_url(scheme, user, host, port):
+        """Format a connection URL without its path or password."""
+        user_info = '%s@' % user if user else ''
+        return '%s%s%s:%d' % (scheme, user_info, host, port)
 
     def _get_base_url(self):
         """Return the base URL (without path) for this connection."""
-        if self._user:
-            return '%s%s@%s:%d' % (self._scheme, self._user, self._host, self._port)
-        else:
-            return '%s%s:%d' % (self._scheme, self._host, self._port)
+        return self._format_base_url(
+            self._scheme, self._user, self._host, self._port)
 
     @property
     def conn(self):
@@ -242,21 +247,35 @@ class FtpWrapper():
     def path(self):
         return self._path
 
+    def upload(
+        self, src_file: BinaryIO,
+        on_chunk: Callable[[bytes], None] | None = None,
+    ) -> None:
+        """Upload a file through the pooled FTP session."""
+        with ftputil.error.ftplib_error_to_ftp_os_error:
+            if on_chunk is None:
+                self.conn._session.storbinary(
+                    'STOR ' + self.path, src_file)
+            else:
+                self.conn._session.storbinary(
+                    'STOR ' + self.path, src_file, callback=on_chunk)
+
+    def download(
+        self, dst_file: BinaryIO, on_chunk: Callable[[bytes], None],
+    ) -> None:
+        """Download a file and report each received block."""
+        def write_chunk(block):
+            dst_file.write(block)
+            on_chunk(block)
+
+        with ftputil.error.ftplib_error_to_ftp_os_error:
+            self.conn._session.retrbinary(
+                'RETR ' + self.path, write_chunk)
+
     def _remove_connection(self, conn_hash):
         """Remove a connection from the pool and close it."""
         if conn_hash in self.__conn_pool:
-            try:
-                ftp_host = self.__conn_pool[conn_hash]
-                # Close all child connections first
-                for child in ftp_host._children[:]:
-                    try:
-                        child.close()
-                    except:
-                        pass
-                # Close the main connection
-                ftp_host.close()
-            except:
-                pass
+            self._close_host(self.__conn_pool[conn_hash])
             del self.__conn_pool[conn_hash]
             if conn_hash in self.__conn_timestamps:
                 del self.__conn_timestamps[conn_hash]
@@ -264,6 +283,19 @@ class FtpWrapper():
                 del self.__last_noop_check[conn_hash]
             if conn_hash in self.__conn_base_urls:
                 del self.__conn_base_urls[conn_hash]
+
+    @staticmethod
+    def _close_host(host):
+        """Close child sessions and the pooled host, tolerating partial failure."""
+        for child in getattr(host, '_children', ())[:]:
+            try:
+                child.close()
+            except Exception:
+                pass
+        try:
+            host.close()
+        except Exception:
+            pass
 
     def _cleanup_stale_connections(self):
         """Remove connections that have been idle for too long."""
@@ -298,18 +330,7 @@ class FtpWrapper():
         """Close all connections in the pool. Useful for cleanup."""
         with cls.__pool_lock:
             for conn_hash in list(cls.__conn_pool.keys()):
-                try:
-                    ftp_host = cls.__conn_pool[conn_hash]
-                    # Close all child connections first
-                    for child in ftp_host._children[:]:
-                        try:
-                            child.close()
-                        except:
-                            pass
-                    # Close the main connection
-                    ftp_host.close()
-                except:
-                    pass
+                cls._close_host(cls.__conn_pool[conn_hash])
             cls.__conn_pool.clear()
             cls.__conn_timestamps.clear()
             cls.__last_noop_check.clear()
@@ -327,16 +348,11 @@ class FtpWrapper():
         if url_without_path in bookmarks:
             u = urlparse(bookmarks[url_without_path][0])._replace(path=u.path)
 
-        # Build base URL matching _get_base_url format
-        scheme = '%s://' % u.scheme
         host = u.hostname or ''
-        port = u.port or 21
+        port = u.port or DEFAULT_PORTS.get(u.scheme, 21)
         user = unquote(u.username or '')
-
-        if user:
-            base_url = '%s%s@%s:%d' % (scheme, user, host, port)
-        else:
-            base_url = '%s%s:%d' % (scheme, host, port)
+        base_url = cls._format_base_url(
+            '%s://' % u.scheme, user, host, port)
 
         with cls.__pool_lock:
             cls.__last_visited_paths[base_url] = url
@@ -364,18 +380,7 @@ class FtpWrapper():
             ]
             for conn_hash in hashes_to_remove:
                 if conn_hash in cls.__conn_pool:
-                    try:
-                        ftp_host = cls.__conn_pool[conn_hash]
-                        # Close all child connections first
-                        for child in ftp_host._children[:]:
-                            try:
-                                child.close()
-                            except:
-                                pass
-                        # Close the main connection
-                        ftp_host.close()
-                    except:
-                        pass
+                    cls._close_host(cls.__conn_pool[conn_hash])
                     del cls.__conn_pool[conn_hash]
                     if conn_hash in cls.__conn_timestamps:
                         del cls.__conn_timestamps[conn_hash]

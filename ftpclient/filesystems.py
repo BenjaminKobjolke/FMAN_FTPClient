@@ -4,7 +4,8 @@ import re
 import stat
 from datetime import datetime
 from io import UnsupportedOperation
-from os.path import commonprefix, dirname, join as pathjoin
+from os.path import dirname, join as pathjoin
+from urllib.parse import unquote, urlparse
 
 import os
 
@@ -13,7 +14,8 @@ from fman.fs import FileSystem, cached
 from fman.url import \
     basename, dirname as urldirname, join as urljoin, splitscheme
 
-from .ftp import FtpConnectionError, FtpWrapper, invalidate_stat_caches
+from .connections import connection_for
+from .ftp import DEFAULT_PORTS, FtpConnectionError, invalidate_stat_caches
 
 try:
     import ftputil.error
@@ -24,7 +26,7 @@ except ImportError:
         os.path.join(os.path.dirname(__file__), 'ftputil-3.4'))
     import ftputil.error
 
-is_ftp = re.compile('^ftps?://').match
+is_ftp = re.compile('^(?:ftps?|sftp)://').match
 is_file = re.compile('^file://').match
 
 # Files fman transfers at once between FTP and this machine. Each worker holds
@@ -141,27 +143,27 @@ class FtpFs(FileSystem):
 
     @cached
     def size_bytes(self, path):
-        with FtpWrapper(self.scheme + path) as ftp:
+        with connection_for(self.scheme + path) as ftp:
             return ftp.conn.path.getsize(ftp.path)
 
     @cached
     def modified_datetime(self, path):
-        with FtpWrapper(self.scheme + path) as ftp:
+        with connection_for(self.scheme + path) as ftp:
             return datetime.utcfromtimestamp(ftp.conn.path.getmtime(ftp.path))
 
     @cached
     def get_permissions(self, path):
-        with FtpWrapper(self.scheme + path) as ftp:
+        with connection_for(self.scheme + path) as ftp:
             return stat.filemode(ftp.conn.lstat(ftp.path).st_mode)
 
     @cached
     def get_owner(self, path):
-        with FtpWrapper(self.scheme + path) as ftp:
+        with connection_for(self.scheme + path) as ftp:
             return ftp.conn.lstat(ftp.path).st_uid
 
     @cached
     def get_group(self, path):
-        with FtpWrapper(self.scheme + path) as ftp:
+        with connection_for(self.scheme + path) as ftp:
             return ftp.conn.lstat(ftp.path).st_gid
 
     @cached
@@ -171,7 +173,7 @@ class FtpFs(FileSystem):
         if not path:
             return False
         try:
-            with FtpWrapper(self.scheme + path) as ftp:
+            with connection_for(self.scheme + path) as ftp:
                 return ftp.conn.path.exists(ftp.path)
         except FtpConnectionError:
             # Connection/login problems are real errors: let them through so
@@ -188,7 +190,7 @@ class FtpFs(FileSystem):
         if not path:
             return False
         try:
-            with FtpWrapper(self.scheme + path) as ftp:
+            with connection_for(self.scheme + path) as ftp:
                 return ftp.conn.path.isdir(ftp.path)
         except FtpConnectionError:
             raise
@@ -201,7 +203,7 @@ class FtpFs(FileSystem):
         if not path:
             return
         show_status_message('Loading %s...' % (path,))
-        with FtpWrapper(self.scheme + path) as ftp:
+        with connection_for(self.scheme + path) as ftp:
             # ftputil's listdir() automatically populates its internal
             # _lstat_cache with all file stats. No need to manually
             # pre-fetch stats - they're already cached!
@@ -210,7 +212,7 @@ class FtpFs(FileSystem):
         show_status_message('Ready.', timeout_secs=0)
 
     def delete(self, path):
-        with FtpWrapper(self.scheme + path) as ftp:
+        with connection_for(self.scheme + path) as ftp:
             if self.is_dir(path):
                 ftp.conn.rmtree(ftp.path)
             else:
@@ -228,7 +230,7 @@ class FtpFs(FileSystem):
         # pane sitting in `path` to its parent.
         if self.exists(path):
             raise FileExistsError(errno.EEXIST, "File exists", path)
-        with FtpWrapper(self.scheme + path) as ftp:
+        with connection_for(self.scheme + path) as ftp:
             ftp.conn.makedirs(ftp.path)
         self._notify_written(path)
         self._reload_panes(path)
@@ -236,10 +238,8 @@ class FtpFs(FileSystem):
     def touch(self, path):
         if self.exists(path):
             raise OSError(errno.EEXIST, "File exists")
-        with FtpWrapper(self.scheme + path) as ftp:
-            with ftputil.error.ftplib_error_to_ftp_os_error:
-                ftp.conn._session.storbinary(
-                    'STOR ' + ftp.path, io.BytesIO())
+        with connection_for(self.scheme + path) as ftp:
+            ftp.upload(io.BytesIO())
         self._notify_written(path)
         self._reload_panes(path)
 
@@ -298,39 +298,31 @@ class FtpFs(FileSystem):
 
         if is_file(src_url):
             src_path = splitscheme(src_url)[1]
-            ftp = FtpWrapper(dst_url)
+            ftp = connection_for(dst_url)
 
             def upload(on_chunk):
                 # ftputil opens a second login per file; hosts limit logins per IP.
                 with ftp:
-                    with open(src_path, 'rb') as src, \
-                            ftputil.error.ftplib_error_to_ftp_os_error:
-                        ftp.conn._session.storbinary(
-                            'STOR ' + ftp.path, src, callback=on_chunk)
+                    with open(src_path, 'rb') as src:
+                        ftp.upload(src, on_chunk=on_chunk)
 
             return _Transfer(
                 'Uploading', name, _local_size(src_path), upload, written)
 
-        src_ftp = FtpWrapper(src_url)
+        src_ftp = connection_for(src_url)
         if is_file(dst_url):
             def download(on_chunk):
                 # ftputil opens a second login per file; hosts limit logins per IP.
                 with src_ftp:
-                    with open(dst_path, 'wb') as dst, \
-                            ftputil.error.ftplib_error_to_ftp_os_error:
-                        def write_chunk(block):
-                            dst.write(block)
-                            on_chunk(block)
-
-                        src_ftp.conn._session.retrbinary(
-                            'RETR ' + src_ftp.path, write_chunk)
+                    with open(dst_path, 'wb') as dst:
+                        src_ftp.download(dst, on_chunk)
 
             # Local destination: nothing of ours to invalidate.
             return _Transfer(
                 'Downloading', name, _remote_size(src_ftp), download,
                 lambda: fs.notify_file_added(dst_url))
 
-        dst_ftp = FtpWrapper(dst_url)
+        dst_ftp = connection_for(dst_url)
 
         def ftp_to_ftp(on_chunk):
             with src_ftp, dst_ftp:
@@ -343,15 +335,21 @@ class FtpFs(FileSystem):
 
     @staticmethod
     def _is_rename(src_url, dst_url):
-        src_scheme, src_path = splitscheme(src_url)
-        dst_scheme, dst_path = splitscheme(dst_url)
-        return src_scheme == dst_scheme and commonprefix([src_path, dst_path])
+        src = urlparse(src_url)
+        dst = urlparse(dst_url)
+        src_identity = (
+            src.scheme, src.hostname, src.port or DEFAULT_PORTS.get(src.scheme),
+            unquote(src.username or ''), unquote(src.password or ''))
+        dst_identity = (
+            dst.scheme, dst.hostname, dst.port or DEFAULT_PORTS.get(dst.scheme),
+            unquote(dst.username or ''), unquote(dst.password or ''))
+        return src_identity == dst_identity and src.path and dst.path
 
     def move(self, src_url, dst_url):
         if self._is_rename(src_url, dst_url):
             # Use single connection for same-server renames
-            with FtpWrapper(src_url) as ftp:
-                ftp.conn.rename(ftp.path, FtpWrapper(dst_url).path)
+            with connection_for(src_url) as ftp:
+                ftp.conn.rename(ftp.path, connection_for(dst_url).path)
             self._notify_removed(splitscheme(src_url)[1])
             self._notify_written(splitscheme(dst_url)[1])
             self._reload_panes(
@@ -401,7 +399,7 @@ class FtpFs(FileSystem):
             cls._delete_source(src_url)
 
     def get_stats(self, path):
-        with FtpWrapper(self.scheme + path) as ftp:
+        with connection_for(self.scheme + path) as ftp:
             lstat = ftp.conn.lstat(ftp.path)
             dt_mtime = datetime.utcfromtimestamp(lstat.st_mtime)
             st_mode = stat.filemode(lstat.st_mode)
@@ -414,3 +412,7 @@ class FtpFs(FileSystem):
 
 class FtpsFs(FtpFs):
     scheme = 'ftps://'
+
+
+class SftpFs(FtpFs):
+    scheme = 'sftp://'

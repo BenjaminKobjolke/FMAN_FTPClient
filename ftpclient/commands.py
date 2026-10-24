@@ -6,8 +6,9 @@ from fman import \
     DirectoryPaneCommand, NO, QuicksearchItem, YES, fs, load_json, save_json, \
     show_alert, show_prompt, show_quicksearch, show_status_message
 from fman.clipboard import set_text
-from fman.url import basename, join, splitscheme
+from fman.url import basename, join
 
+from .connections import connection_for
 from .filesystems import is_ftp
 from .ftp import FtpConnectionError, FtpWrapper
 
@@ -18,7 +19,7 @@ def _goto_ftp(pane, url):
         pane.set_path(url)
         return
     try:
-        with FtpWrapper(url):
+        with connection_for(url):
             pass
     except FtpConnectionError as e:
         show_alert(str(e))
@@ -52,7 +53,8 @@ class OpenFtpLocation(DirectoryPaneCommand):
     def __call__(self):
         text, ok = show_prompt(
             'Please enter the URL',
-            default='ftp[s]://[user[:password]@]ftp.host[:port][/path/to/dir]')
+            default='ftp[s]://[user[:password]@]ftp.host[:port][/path] '
+                    'or sftp://[user[:password]@]sftp.host[:port][/path]')
         if text and ok:
             _goto_ftp(self.pane, text)
             return
@@ -87,17 +89,19 @@ class AddFtpBookmark(DirectoryPaneCommand):
     def __call__(self):
         url = self.pane.get_path()
         if not is_ftp(url):
-            url = 'ftp[s]://user[:password]@other.host[:port]/some_dir'
+            url = (
+                'ftp[s]://user[:password]@ftp.host[:port]/some_dir '
+                'or sftp://user@host[:port]/some_dir')
 
         url, ok = show_prompt(
-            'New FTP bookmark, please enter the URL', default=url)
+            'New FTP/SFTP bookmark, please enter the URL', default=url)
 
         if not (url and ok):
             return
         if not is_ftp(url):
             show_alert(
                 'URL must include any of the following schemes: '
-                'ftp://, ftps://')
+                'ftp://, ftps://, sftp://')
             return
 
         bookmarks = \
@@ -120,10 +124,13 @@ class AddFtpBookmark(DirectoryPaneCommand):
 
         if not (alias and ok):
             return
-        if not is_ftp(alias):
-            # XXX alias must include the FTP scheme
-            scheme, _ = splitscheme(base)
-            alias = scheme + alias
+        alias_scheme = urlparse(alias).scheme
+        base_scheme = urlparse(base).scheme
+        if not alias_scheme:
+            alias = base_scheme + '://' + alias
+        elif alias_scheme != base_scheme:
+            show_alert('Bookmark alias must use the same scheme as its URL')
+            return
         if urlparse(alias).path:
             show_alert('Aliases should not include path information')
             return
@@ -186,8 +193,8 @@ class NavigateToOpenFtpConnection(DirectoryPaneCommand):
     def __call__(self):
         connections = FtpWrapper.get_open_connections()
         if not connections:
-            show_alert('No open FTP connections.\n\n'
-                      'Connect to an FTP server first using a bookmark or URL.')
+            show_alert('No open FTP/SFTP connections.\n\n'
+                      'Connect to a server first using a bookmark or URL.')
             return
         result = show_quicksearch(self._get_items)
         if result and result[1]:
@@ -216,7 +223,7 @@ class CloseIndividualFtpConnection(DirectoryPaneCommand):
     def __call__(self):
         connections = FtpWrapper.get_open_connections()
         if not connections:
-            show_alert('No open FTP connections.\n\n'
+            show_alert('No open FTP/SFTP connections.\n\n'
                       'There are no active connections to close.')
             return
         result = show_quicksearch(self._get_items)
@@ -229,7 +236,7 @@ class CloseIndividualFtpConnection(DirectoryPaneCommand):
             if is_ftp(current_url) and base_url in current_url:
                 from os.path import expanduser
                 self.pane.set_path('file://' + expanduser('~'))
-            show_alert('FTP connection closed:\n\n' + base_url)
+            show_alert('Connection closed:\n\n' + base_url)
 
     def _get_items(self, query):
         connections = FtpWrapper.get_open_connections()
@@ -246,7 +253,7 @@ class CloseIndividualFtpConnection(DirectoryPaneCommand):
 class RemoveFtpHistory(DirectoryPaneCommand):
     def __call__(self):
         choice = show_alert(
-            'Are you sure you want to delete the FTP connection history?',
+            'Are you sure you want to delete the FTP/SFTP connection history?',
             buttons=YES | NO,
             default_button=NO
         )
@@ -268,10 +275,10 @@ class ToggleFtpDetailedStats(DirectoryPaneCommand):
 
         # Show current state
         if settings['disable_detailed_stats']:
-            show_alert('FTP detailed stats disabled. Only filenames will be shown.\n\n'
+            show_alert('Remote detailed stats disabled. Only filenames will be shown.\n\n'
                       'This provides faster directory listings but no file metadata.')
         else:
-            show_alert('FTP detailed stats enabled. Full file information will be shown.\n\n'
+            show_alert('Remote detailed stats enabled. Full file information will be shown.\n\n'
                       'This includes size, date, permissions, owner, and group.')
 
 
@@ -286,8 +293,8 @@ class CloseFtpConnections(DirectoryPaneCommand):
             from os.path import expanduser
             self.pane.set_path('file://' + expanduser('~'))
 
-        show_alert('All FTP connections have been closed.\n\n'
-                  'You have been disconnected from the FTP server.')
+        show_alert('All FTP/SFTP connections have been closed.\n\n'
+                  'You have been disconnected from the server.')
 
 
 def _get_ftp_bookmark_info(ftp_url):
@@ -297,7 +304,7 @@ def _get_ftp_bookmark_info(ftp_url):
     """
     # Check if we're on an FTP path
     if not is_ftp(ftp_url):
-        show_alert('This command only works on FTP paths')
+        show_alert('This command only works on FTP/SFTP paths')
         return None, None, None, None
 
     # Parse the FTP URL
@@ -309,7 +316,7 @@ def _get_ftp_bookmark_info(ftp_url):
 
     if url_without_path not in bookmarks:
         show_alert(
-            'No bookmark found for this FTP server.\n\n'
+            'No bookmark found for this server.\n\n'
             'Please add a bookmark first using "Add Ftp Bookmark".'
         )
         return None, None, None, None
@@ -347,7 +354,7 @@ class CopyFtpWebUrl(DirectoryPaneCommand):
                 current_web_url = bookmark[2]
 
             base_web_url, ok = show_prompt(
-                'Enter the base web URL for this FTP server\n'
+                'Enter the base web URL for this server\n'
                 '(e.g., https://example.com)',
                 default=current_web_url if current_web_url else 'https://'
             )
@@ -396,7 +403,7 @@ class ChangeFtpWebUrl(DirectoryPaneCommand):
 
         # Prompt user for new web URL
         new_web_url, ok = show_prompt(
-            'Enter the new base web URL for this FTP server\n'
+            'Enter the new base web URL for this server\n'
             '(e.g., https://example.com)\n'
             'Leave empty to remove the web URL',
             default=current_web_url
@@ -452,7 +459,7 @@ class OpenFtpWebUrl(DirectoryPaneCommand):
                 current_web_url = bookmark[2]
 
             base_web_url, ok = show_prompt(
-                'Enter the base web URL for this FTP server\n'
+                'Enter the base web URL for this server\n'
                 '(e.g., https://example.com)',
                 default=current_web_url if current_web_url else 'https://'
             )
