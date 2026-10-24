@@ -55,5 +55,6 @@
     "python test_stat_cache_generation.py": {
       "test": "green"
     }
-  }
+  },
+  "analysis_code_quality_answered": true
 }
