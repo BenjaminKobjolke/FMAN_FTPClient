@@ -1,2 +1,3 @@
 # Vendored / third-party code — not our architecture, noise in the graph
 ftputil-3.4/
+vendor-sftp/

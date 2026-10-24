@@ -3,7 +3,8 @@
     "TICKETS_WATCHER_COMMANDS.md": 2
   },
   "command_check_scripts": [
-    "graphify_update.bat"
+    "graphify_update.bat",
+    "vendor_sftp_deps.bat"
   ],
   "analysis_commands": [
     "python test_connect_outside_pool_lock.py",
