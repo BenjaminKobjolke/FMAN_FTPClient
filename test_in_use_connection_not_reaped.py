@@ -48,6 +48,12 @@ def make_idle(wrapper):
 
 
 transfer = ftp.FtpWrapper('ftp://user:pw@example.com:2121/big.bin')
+# Scheme and default port are part of the protocol-neutral pool identity.
+sftp = ftp.FtpWrapper('sftp://user:pw@example.com/big.bin')
+assert sftp._port == 22
+assert sftp.hash != ftp.FtpWrapper(
+    'ftp://user:pw@example.com:22/big.bin').hash
+assert sftp._get_base_url() == 'sftp://user@example.com:22'
 # Another user, so another pool entry: stands in for a second thread.
 other = ftp.FtpWrapper('ftp://other:pw@example.com:2121/dir')
 host = FakeHost()

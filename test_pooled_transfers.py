@@ -62,6 +62,7 @@ package = types.ModuleType('ftpclient')
 package.__path__ = [os.path.join(HERE, 'ftpclient')]
 sys.modules['ftpclient'] = package
 filesystems = importlib.import_module('ftpclient.filesystems')
+wrapper_type = importlib.import_module('ftpclient.ftp').FtpWrapper
 
 
 class FakeSession:
@@ -75,7 +76,8 @@ class FakeSession:
             block = file_obj.read(3)
             if not block:
                 break
-            callback(block)
+            if callback is not None:
+                callback(block)
 
     def retrbinary(self, command, callback):
         self.downloads.append(command)
@@ -104,8 +106,19 @@ class FakeWrapper:
     def __exit__(self, *exc):
         return False
 
+    def upload(self, src_file, on_chunk=None):
+        kwargs = {'callback': on_chunk} if on_chunk is not None else {}
+        host._session.storbinary('STOR ' + self.path, src_file, **kwargs)
 
-filesystems.FtpWrapper = FakeWrapper
+    def download(self, dst_file, on_chunk):
+        def write_chunk(block):
+            dst_file.write(block)
+            on_chunk(block)
+
+        host._session.retrbinary('RETR ' + self.path, write_chunk)
+
+
+filesystems.connection_for = lambda url: FakeWrapper(url)
 
 with tempfile.TemporaryDirectory() as directory:
     src_path = os.path.join(directory, 'upload.bin')
@@ -129,6 +142,20 @@ with tempfile.TemporaryDirectory() as directory:
     download._transfer(download_chunks.append)
     assert host._session.downloads == ['RETR /download.bin']
     assert download_chunks == [b'abc', b'de']
+    with open(dst_path, 'rb') as result:
+        assert result.read() == b'abcde'
+
+    wrapper = types.SimpleNamespace(conn=host, path='/direct.bin')
+    with open(src_path, 'rb') as src:
+        wrapper_type.upload(wrapper, src)
+    chunks = []
+    with open(src_path, 'rb') as src:
+        wrapper_type.upload(wrapper, src, chunks.append)
+    assert chunks == [b'abc', b'def', b'g']
+    downloaded_chunks = []
+    with open(dst_path, 'wb') as dst:
+        wrapper_type.download(wrapper, dst, downloaded_chunks.append)
+    assert downloaded_chunks == [b'abc', b'de']
     with open(dst_path, 'rb') as result:
         assert result.read() == b'abcde'
 

@@ -54,9 +54,9 @@ def _no_connections_please(url):
     raise AssertionError('tried to connect for %r' % (url,))
 
 
-filesystems.FtpWrapper = _no_connections_please
+filesystems.connection_for = _no_connections_please
 
-for cls in (filesystems.FtpFs, filesystems.FtpsFs):
+for cls in (filesystems.FtpFs, filesystems.FtpsFs, filesystems.SftpFs):
     fs_obj = cls()
     fs_obj.cache = types.SimpleNamespace(clear=lambda path: None)
     assert fs_obj.exists('') is False, cls

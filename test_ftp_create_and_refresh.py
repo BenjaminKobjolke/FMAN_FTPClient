@@ -102,7 +102,7 @@ class FakeSession:
     def __init__(self):
         self.uploads = []
 
-    def storbinary(self, command, file_obj):
+    def storbinary(self, command, file_obj, callback=None):
         self.uploads.append((command, file_obj.read()))
 
 
@@ -129,7 +129,6 @@ class FakeHost:
 
 
 host = FakeHost()
-wrapper_type = filesystems.FtpWrapper
 
 
 class FakeWrapper:
@@ -143,8 +142,15 @@ class FakeWrapper:
     def __exit__(self, *exc):
         return False
 
+    def upload(self, src_file, on_chunk=None):
+        kwargs = {'callback': on_chunk} if on_chunk is not None else {}
+        host._session.storbinary('STOR ' + self.path, src_file, **kwargs)
 
-filesystems.FtpWrapper = FakeWrapper
+    def download(self, dst_file, on_chunk):
+        raise AssertionError('download is not used in this test')
+
+
+filesystems.connection_for = lambda url: FakeWrapper(url)
 
 
 def expect_notifications(expected):

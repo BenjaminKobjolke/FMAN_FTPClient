@@ -130,8 +130,12 @@ class FakeWrapper:
     def __exit__(self, *exc):
         return False
 
+    def upload(self, src_file, on_chunk=None):
+        callback = on_chunk or (lambda _chunk: None)
+        self.conn.storbinary('STOR ' + self.path, src_file, callback)
 
-filesystems.FtpWrapper = FakeWrapper
+
+filesystems.connection_for = lambda url: FakeWrapper(url)
 
 with tempfile.TemporaryDirectory() as tmp_dir:
     with open(os.path.join(tmp_dir, 'a.bin'), 'wb') as f:
