@@ -5,11 +5,54 @@
   "command_check_scripts": [
     "graphify_update.bat"
   ],
-  "analysis_commands": [],
+  "analysis_commands": [
+    "python test_connect_outside_pool_lock.py",
+    "python test_copy_single_dialog.py",
+    "python test_edit_upload.py",
+    "python test_ftp_connection_error.py",
+    "python test_ftp_create_and_refresh.py",
+    "python test_in_use_connection_not_reaped.py",
+    "python test_move_to_trash.py",
+    "python test_pooled_transfers.py",
+    "python test_root_path_no_connect.py",
+    "python test_stat_cache_generation.py"
+  ],
   "analysis_commands_seen": {
     "scripts": [
       "graphify_update.bat"
     ],
     "tests": true
+  },
+  "analysis_command_states": {
+    "python test_connect_outside_pool_lock.py": {
+      "test": "green"
+    },
+    "python test_copy_single_dialog.py": {
+      "test": "green"
+    },
+    "python test_edit_upload.py": {
+      "test": "green"
+    },
+    "python test_ftp_connection_error.py": {
+      "test": "green"
+    },
+    "python test_ftp_create_and_refresh.py": {
+      "test": "green"
+    },
+    "python test_in_use_connection_not_reaped.py": {
+      "test": "green"
+    },
+    "python test_move_to_trash.py": {
+      "test": "green"
+    },
+    "python test_pooled_transfers.py": {
+      "test": "green"
+    },
+    "python test_root_path_no_connect.py": {
+      "test": "green"
+    },
+    "python test_stat_cache_generation.py": {
+      "test": "green"
+    }
   }
 }
