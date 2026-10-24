@@ -35,7 +35,7 @@ set "GRAPHIFY=graphify"
 where graphify >nul 2>nul
 if errorlevel 1 (
   if exist "graphify-out\.graphify_python" (
-    set /p GPY=<graphify-out\.graphify_python
+    for /f "usebackq delims=" %%A in ("graphify-out\.graphify_python") do set "GPY=%%A"
     set "GRAPHIFY=!GPY:python.exe=graphify.exe!"
   ) else (
     echo ERROR: graphify not on PATH and no graphify-out\.graphify_python found.
@@ -47,6 +47,10 @@ if errorlevel 1 (
 echo === [1/2] live-graph AST refresh (no LLM) : %CODE_DIR% ===
 set "GRAPHIFY_OUT=%CD%\graphify-out"
 "%GRAPHIFY%" update --force "%CD%\%CODE_DIR%"
+if errorlevel 1 (
+  echo ERROR: graphify update failed.
+  popd & endlocal & exit /b 1
+)
 echo.
 
 echo === [2/2] smoke test: live root graph ===
@@ -57,15 +61,36 @@ if not exist "graphify-out\graph.json" (
 )
 REM Report directed flag + node count of the LIVE root graph (should be directed:True).
 if exist "graphify-out\.graphify_python" (
-  set /p GPY2=<graphify-out\.graphify_python
-  "!GPY2!" -c "import json;d=json.load(open('graphify-out/graph.json',encoding='utf-8'));print('directed:',d.get('directed'),'  nodes:',len(d.get('nodes',[])))"
+  for /f "usebackq delims=" %%A in ("graphify-out\.graphify_python") do set "GRAPHIFY_PYTHON=%%A"
+)
+if not exist "!GRAPHIFY_PYTHON!" (
+  where python >nul 2>nul
+  if errorlevel 1 (
+    echo ERROR: Python is required to inspect graphify-out\graph.json, but no saved interpreter or python on PATH was found.
+    popd & endlocal & exit /b 1
+  )
+  set "GRAPHIFY_PYTHON=python"
+)
+"!GRAPHIFY_PYTHON!" -c "import json;d=json.load(open('graphify-out/graph.json',encoding='utf-8'));print('directed:',d.get('directed'),'  nodes:',len(d.get('nodes',[])))"
+if errorlevel 1 (
+  echo ERROR: graphify graph inspection failed.
+  popd & endlocal & exit /b 1
 )
 echo.
 echo --- god nodes (top 5) ---
 "%GRAPHIFY%" god-nodes --top 5
+if errorlevel 1 (
+  echo ERROR: graphify god-nodes failed.
+  popd & endlocal & exit /b 1
+)
 echo.
 echo --- sample query ---
 "%GRAPHIFY%" query "What are the main modules and how do they connect?"
+if errorlevel 1 (
+  echo ERROR: graphify query failed.
+  popd & endlocal & exit /b 1
+)
 
 popd
 endlocal
+exit /b 0
