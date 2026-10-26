@@ -217,7 +217,7 @@ class LRUCache(object):
         If no such key is present in the cache, raise a
         `CacheKeyError`.
         """
-        if not key in self.__dict:
+        if key not in self.__dict:
             raise CacheKeyError(key)
         else:
             node = self.__dict[key]
@@ -232,7 +232,7 @@ class LRUCache(object):
         If no such key is present in the cache, raise a
         `CacheKeyError`.
         """
-        if not key in self.__dict:
+        if key not in self.__dict:
             raise CacheKeyError(key)
         else:
             node = self.__dict[key]
@@ -281,7 +281,7 @@ class LRUCache(object):
         May be useful for cache instances where the stored values can get
         "stale", such as caching file or network resource contents.
         """
-        if not key in self.__dict:
+        if key not in self.__dict:
             raise CacheKeyError(key)
         else:
             node = self.__dict[key]

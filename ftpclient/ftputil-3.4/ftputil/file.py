@@ -89,7 +89,7 @@ class FTPFile(object):
         # Force to binary regardless of transfer type (see above).
         makefile_mode = mode
         makefile_mode = makefile_mode.replace("t", "")
-        if not "b" in makefile_mode:
+        if "b" not in makefile_mode:
             makefile_mode += "b"
         # Get connection and file object.
         with ftputil.error.ftplib_error_to_ftp_io_error:
