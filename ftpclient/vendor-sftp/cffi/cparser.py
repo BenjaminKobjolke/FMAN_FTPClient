@@ -5,7 +5,9 @@ try:
     from . import _pycparser as pycparser
 except ImportError:
     import pycparser
-import weakref, re, sys
+import weakref
+import re
+import sys
 
 try:
     if sys.version_info < (3,):
