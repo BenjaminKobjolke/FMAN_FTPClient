@@ -7,6 +7,8 @@ from urllib.parse import unquote, urlparse
 
 from fman import load_json
 
+from . import credentials
+
 try:
     import ftputil
 except ImportError:
@@ -145,8 +147,10 @@ class FtpWrapper():
         session_factory = \
             FtpTlsSession if self._scheme == 'ftps://' else FtpSession
         try:
+            password = self._passwd or credentials.read_password(
+                credentials.credential_target(self._get_base_url())) or ''
             ftp_host = ftputil.FTPHost(
-                self._host, self._port, self._user, self._passwd,
+                self._host, self._port, self._user, password,
                 session_factory=session_factory)
         except Exception as e:
             # ftputil appends a multi-line "Debugging info" block; the
@@ -194,7 +198,7 @@ class FtpWrapper():
             if host._file.closed:
                 try:
                     host._session.close()
-                except:
+                except Exception:
                     pass
                 stale_indices.append(i)
 

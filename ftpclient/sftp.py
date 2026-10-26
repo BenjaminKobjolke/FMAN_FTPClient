@@ -66,10 +66,6 @@ def _show_changed_host_key(host, port, known_hosts_path):
             host, port, known_hosts_path))
 
 
-def _credential_target(base_url):
-    return 'FMAN_FTPClient:SFTP:' + base_url
-
-
 class _TrustUnknownHost(paramiko.MissingHostKeyPolicy):
     def __init__(self, hostname, port, known_hosts_path):
         self._hostname = hostname
@@ -122,7 +118,7 @@ class SftpWrapper(FtpWrapper):
 
         client.set_missing_host_key_policy(
             _TrustUnknownHost(self._host, self._port, known_hosts_path))
-        target = _credential_target(self._get_base_url())
+        target = credentials.credential_target(self._get_base_url())
         supplied_password = self._passwd or None
         stored_password = None if supplied_password else \
             credentials.read_password(target)

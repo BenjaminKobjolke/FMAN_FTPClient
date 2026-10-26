@@ -8,6 +8,7 @@ from fman import \
 from fman.clipboard import set_text
 from fman.url import basename, join
 
+from .bookmarks import bookmark_targets, save_bookmark
 from .connections import connection_for
 from .filesystems import is_ftp
 from .ftp import FtpConnectionError, FtpWrapper
@@ -104,17 +105,15 @@ class AddFtpBookmark(DirectoryPaneCommand):
                 'ftp://, ftps://, sftp://')
             return
 
-        bookmarks = \
-            load_json('FTP Bookmarks.json', default={}, save_on_quit=True)
-
         # XXX URL is split in `(base, path)` to allow setting a default path
         u = urlparse(url)
         base = alias = u._replace(path='').geturl()
         path = u.path
 
+        bookmarks = bookmark_targets()
         if base in bookmarks:
             # XXX if base URL points to an alias, resolve to an existing URL
-            base = bookmarks[base][0]
+            base = bookmarks[base]
 
         if path and path.strip('/'):
             alias += '-'.join(path.split('/'))
@@ -135,8 +134,7 @@ class AddFtpBookmark(DirectoryPaneCommand):
             show_alert('Aliases should not include path information')
             return
 
-        bookmarks[alias] = (base, path)
-        save_json('FTP Bookmarks.json')
+        save_bookmark(alias, base, path)
 
 
 class RemoveFtpBookmark(DirectoryPaneCommand):
@@ -275,11 +273,16 @@ class ToggleFtpDetailedStats(DirectoryPaneCommand):
 
         # Show current state
         if settings['disable_detailed_stats']:
-            show_alert('Remote detailed stats disabled. Only filenames will be shown.\n\n'
-                      'This provides faster directory listings but no file metadata.')
+            show_alert(
+                'Remote detailed stats disabled. Only filenames will be shown.\n\n'
+                'This provides faster directory listings but no file metadata.'
+            )
         else:
-            show_alert('Remote detailed stats enabled. Full file information will be shown.\n\n'
-                      'This includes size, date, permissions, owner, and group.')
+            show_alert(
+                'Remote detailed stats enabled. Full file information '
+                'will be shown.\n\n'
+                'This includes size, date, permissions, owner, and group.'
+            )
 
 
 class CloseFtpConnections(DirectoryPaneCommand):
@@ -300,7 +303,7 @@ class CloseFtpConnections(DirectoryPaneCommand):
 def _get_ftp_bookmark_info(ftp_url):
     """
     Helper function to get bookmark information for an FTP URL.
-    Returns: (url_without_path, bookmark, bookmarks_dict, parsed_url) or (None, None, None, None) if invalid
+    Returns bookmark data or four None values when the URL is invalid.
     """
     # Check if we're on an FTP path
     if not is_ftp(ftp_url):
@@ -336,44 +339,9 @@ class CopyFtpWebUrl(DirectoryPaneCommand):
         else:
             ftp_url = self.pane.get_path()
 
-        # Get bookmark info
-        url_without_path, bookmark, bookmarks, u = _get_ftp_bookmark_info(ftp_url)
-        if not bookmark:
+        web_url = _get_ftp_web_url(ftp_url)
+        if web_url is None:
             return
-
-        # Check if base_url is configured (index 2 in bookmark array)
-        base_web_url = None
-        if len(bookmark) >= 3 and bookmark[2]:
-            base_web_url = bookmark[2]
-
-        # If not configured, prompt user for it
-        if not base_web_url:
-            # Get current web URL for prefill, or use default
-            current_web_url = ''
-            if len(bookmark) >= 3 and bookmark[2]:
-                current_web_url = bookmark[2]
-
-            base_web_url, ok = show_prompt(
-                'Enter the base web URL for this server\n'
-                '(e.g., https://example.com)',
-                default=current_web_url if current_web_url else 'https://'
-            )
-
-            if not (base_web_url and ok):
-                return
-
-            # Save the web URL to bookmark (preserve existing values)
-            # Bookmark structure: [ftp_url, default_path, web_url]
-            if len(bookmark) >= 2:
-                bookmarks[url_without_path] = (bookmark[0], bookmark[1], base_web_url)
-            else:
-                bookmarks[url_without_path] = (bookmark[0], '', base_web_url)
-            save_json('FTP Bookmarks.json')
-
-        ftp_path = u.path
-
-        # Construct web URL
-        web_url = base_web_url.rstrip('/') + ftp_path
 
         # Copy to clipboard
         set_text(web_url)
@@ -430,6 +398,32 @@ class ChangeFtpWebUrl(DirectoryPaneCommand):
         return is_ftp(self.pane.get_path())
 
 
+def _get_ftp_web_url(ftp_url):
+    url_without_path, bookmark, bookmarks, parsed_url = _get_ftp_bookmark_info(ftp_url)
+    if not bookmark:
+        return None
+
+    base_web_url = bookmark[2] if len(bookmark) >= 3 and bookmark[2] else None
+    if not base_web_url:
+        current_web_url = bookmark[2] if len(bookmark) >= 3 and bookmark[2] else ''
+        base_web_url, ok = show_prompt(
+            'Enter the base web URL for this server\n'
+            '(e.g., https://example.com)',
+            default=current_web_url if current_web_url else 'https://'
+        )
+        if not (base_web_url and ok):
+            return None
+
+        # Preserve the existing bookmark values while adding the web URL.
+        if len(bookmark) >= 2:
+            bookmarks[url_without_path] = (bookmark[0], bookmark[1], base_web_url)
+        else:
+            bookmarks[url_without_path] = (bookmark[0], '', base_web_url)
+        save_json('FTP Bookmarks.json')
+
+    return base_web_url.rstrip('/') + parsed_url.path
+
+
 class OpenFtpWebUrl(DirectoryPaneCommand):
     """Open web URL for FTP file in default browser"""
 
@@ -441,44 +435,9 @@ class OpenFtpWebUrl(DirectoryPaneCommand):
         else:
             ftp_url = self.pane.get_path()
 
-        # Get bookmark info
-        url_without_path, bookmark, bookmarks, u = _get_ftp_bookmark_info(ftp_url)
-        if not bookmark:
+        web_url = _get_ftp_web_url(ftp_url)
+        if web_url is None:
             return
-
-        # Check if base_url is configured (index 2 in bookmark array)
-        base_web_url = None
-        if len(bookmark) >= 3 and bookmark[2]:
-            base_web_url = bookmark[2]
-
-        # If not configured, prompt user for it
-        if not base_web_url:
-            # Get current web URL for prefill, or use default
-            current_web_url = ''
-            if len(bookmark) >= 3 and bookmark[2]:
-                current_web_url = bookmark[2]
-
-            base_web_url, ok = show_prompt(
-                'Enter the base web URL for this server\n'
-                '(e.g., https://example.com)',
-                default=current_web_url if current_web_url else 'https://'
-            )
-
-            if not (base_web_url and ok):
-                return
-
-            # Save the web URL to bookmark (preserve existing values)
-            # Bookmark structure: [ftp_url, default_path, web_url]
-            if len(bookmark) >= 2:
-                bookmarks[url_without_path] = (bookmark[0], bookmark[1], base_web_url)
-            else:
-                bookmarks[url_without_path] = (bookmark[0], '', base_web_url)
-            save_json('FTP Bookmarks.json')
-
-        ftp_path = u.path
-
-        # Construct web URL
-        web_url = base_web_url.rstrip('/') + ftp_path
 
         # Open in default browser
         try:

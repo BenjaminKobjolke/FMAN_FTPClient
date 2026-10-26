@@ -3,11 +3,26 @@ import ctypes
 import sys
 from ctypes import wintypes
 from typing import Optional
+from urllib.parse import urlparse
 
 
+SFTP_CREDENTIAL_PREFIX = 'FMAN_FTPClient:SFTP:'
+FTP_CREDENTIAL_PREFIX = 'FMAN_FTPClient:FTP:'
 _CRED_TYPE_GENERIC = 1
 _CRED_PERSIST_LOCAL_MACHINE = 2
 _ERROR_NOT_FOUND = 1168
+
+
+def credential_target(base_url: str) -> str:
+    """Return the Credential Manager target for an FTP-family base URL."""
+    scheme = urlparse(base_url).scheme
+    if scheme == 'sftp':
+        prefix = SFTP_CREDENTIAL_PREFIX
+    elif scheme in ('ftp', 'ftps'):
+        prefix = FTP_CREDENTIAL_PREFIX
+    else:
+        raise ValueError('Unsupported credential URL scheme: ' + scheme)
+    return prefix + base_url
 
 
 if sys.platform == 'win32':
