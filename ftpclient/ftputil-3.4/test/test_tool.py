@@ -44,7 +44,7 @@ class TestSimpleConversions(object):
         result = ftputil.tool.as_bytes("abc")
         assert result == b"abc"
         assert isinstance(result, compat.bytes_type)
-        
+
     def test_as_unicode(self):
         result = ftputil.tool.as_unicode(b"abc")
         assert result == "abc"
