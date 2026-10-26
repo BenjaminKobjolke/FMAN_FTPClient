@@ -10,6 +10,7 @@
     "fix_ruff_issues.bat",
     "fix_ruff_issues_dry_run.bat",
     "graphify_update.bat",
+    "vendor_import_deps.bat",
     "vendor_sftp_deps.bat"
   ],
   "analysis_commands": [
@@ -43,6 +44,9 @@
     "tests": true
   },
   "analysis_command_states": {
+    "tools/fix_ruff_issues.bat": {
+      "code_quality": "green"
+    },
     "python test_connect_outside_pool_lock.py": {
       "test": "green"
     },
@@ -74,7 +78,10 @@
       "test": "green"
     },
     "tools\\analyze_changed_and_new_files.bat": {
-      "code_quality": "green"
+      "code_quality": "failed"
+    },
+    "tools\\analyze_code.bat": {
+      "code_quality": "failed"
     }
   },
   "analysis_code_quality_answered": true,
