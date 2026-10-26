@@ -2,6 +2,7 @@
 
 Features:
 
+- Import FTP, FTPS and SFTP accounts from WinSCP, FileZilla and NppFTP; FTP connections can use saved passwords from Windows Credential Manager.
 - SFTP connections can browse and manage remote files, copy files to and from FTP or local folders, and edit remote files with upload on save. SSH keys and agents work without a password; prompted passwords are saved in Windows Credential Manager, and server keys are checked using `~/.ssh/known_hosts`.
 - F4 edits FTP files in the configured editor, with every save uploaded
   automatically. Enter uses the same editing flow.

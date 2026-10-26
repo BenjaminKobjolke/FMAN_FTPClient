@@ -9,6 +9,7 @@ A [fman++](https://fman.io/) FTP and SFTP client. FTP support uses the powerful 
 - **Edit remote file** (F4 / Enter): Open an FTP or SFTP file in the configured editor or default app. Saves upload automatically while the “Done editing” dialog is open; click OK when finished.
 - **Open ftp location** (`open_ftp_location`): Connect to an FTP, FTPS or SFTP server using its URL.
 - **Add ftp bookmark** (`add_ftp_bookmark`): Bookmark the current or a custom FTP/SFTP URL.
+- **Import FTP accounts** (`import_ftp_accounts`): Import saved sites from WinSCP, FileZilla or NppFTP as FTP/SFTP bookmarks.
 - **Open ftp bookmark** (`open_ftp_bookmark`): Open a bookmarked FTP/SFTP URL.
 - **Remove ftp bookmark** (`remove_ftp_bookmark`): Remove a bookmarked URL.
 - **Open ftp history** (`open_ftp_history`): Open a previous URL.
@@ -54,13 +55,14 @@ This plugin includes several optimizations for better remote file access perform
 - **Streaming Transfers**: Copies and moves start while the folder tree is still being walked. The walk uses its own connection.
 - **Parallel Transfers**: Downloads and uploads, copies and moves alike, run 3 files at once (`PARALLEL_TRANSFERS` in `ftpclient/filesystems.py`), each on its own connection. Add or remove workers with `+` / `−` in the progress dialog; a removed worker finishes its file first. A move deletes each source file right after its own copy, and a source folder once it is empty. Server-to-server transfers stay sequential.
 
-## SFTP logins and host keys
+## Saved passwords and host keys
 
 - SSH keys and Pageant/SSH agent logins are tried automatically, without asking for a password.
-- A password entered in the connection prompt is saved in Windows Credential Manager for later connections. A password included in the URL is used for that connection and is not saved. Avoid putting passwords in URLs or bookmarks because URLs can expose them as plain text.
+- FTP and SFTP connections read saved passwords from Windows Credential Manager. Passwords imported from WinSCP, FileZilla and NppFTP are saved there, so imported FTP sites connect without asking for a password. A password included in a URL is used for that connection and is not saved. Avoid putting passwords in URLs or bookmarks because URLs can expose them as plain text.
 - Server keys are checked against `~/.ssh/known_hosts`. The first connection shows the server's SHA256 fingerprint and asks whether to trust it. Accepting appends the key to `known_hosts`; a changed key is rejected until that file is corrected.
 - `~/.ssh/config` aliases and `IdentityFile` entries are not read. Paramiko searches the standard `~/.ssh/id_*` keys and uses available SSH agents.
 - Paramiko and its pinned dependencies are vendored under `ftpclient/vendor-sftp/`: Paramiko 5.1.0, cryptography 50.0.2, bcrypt 5.0.0, PyNaCl 1.6.2, cffi 2.1.1, pycparser 3.12 and invoke 3.0.3. `tools/vendor_sftp_deps.bat` downloads the pinned Windows wheels to reproduce that folder when updating the bundled packages.
+- FTP account readers and PyCryptodome are vendored under `ftpclient/vendor-import/`. `tools/vendor_import_deps.bat` downloads the pinned dependencies for importing accounts; the imported reader library is [python-ftp-account-readers](https://github.com/BenjaminKobjolke/python-ftp-account-readers).
 
 ## TODO
 - Allow setting file/folder permissions, if applicable.
@@ -80,6 +82,7 @@ See the [CHANGELOG](CHANGELOG.md).
 
 - Michael Herrmann ([@mherrmann](https://github.com/mherrmann)), the [fman](https://fman.io/) author.
 - Stefan Schwarzer ([@sschwarzer](https://pypi.org/user/sschwarzer/)), the [ftputil](https://ftputil.sschwarzer.net) author.
+- The [python-ftp-account-readers](https://github.com/BenjaminKobjolke/python-ftp-account-readers) project for WinSCP, FileZilla and NppFTP readers.
 
 ## License
 
