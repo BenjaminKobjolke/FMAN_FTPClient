@@ -4,24 +4,13 @@ timeout would otherwise be killed by the next FTP access from another thread.
 
 Run: python test_in_use_connection_not_reaped.py
 """
-import importlib.util
 import os
-import sys
+from ftp_test_support import load_ftp_module
 import time
-import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-fman = types.ModuleType('fman')
-fman.__path__ = []
-fman.load_json = lambda name, default=None, save_on_quit=False: \
-    {} if default is None else default
-sys.modules['fman'] = fman
-
-spec = importlib.util.spec_from_file_location(
-    'ftpclient_ftp', os.path.join(HERE, 'ftpclient', 'ftp.py'))
-ftp = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ftp)
+ftp = load_ftp_module(HERE)
 
 
 class FakeSession:

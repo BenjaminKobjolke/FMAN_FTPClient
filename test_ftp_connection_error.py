@@ -2,23 +2,12 @@
 
 Run: python test_ftp_connection_error.py
 """
-import importlib.util
 import os
-import sys
-import types
+from ftp_test_support import load_ftp_module
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-fman = types.ModuleType('fman')
-fman.__path__ = []
-fman.load_json = lambda name, default=None, save_on_quit=False: \
-    {} if default is None else default
-sys.modules['fman'] = fman
-
-spec = importlib.util.spec_from_file_location(
-    'ftpclient_ftp', os.path.join(HERE, 'ftpclient', 'ftp.py'))
-ftp = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ftp)
+ftp = load_ftp_module(HERE)
 
 
 def _fail(*args, **kwargs):
