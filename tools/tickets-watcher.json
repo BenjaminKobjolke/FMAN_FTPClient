@@ -72,7 +72,7 @@
       "test": "green"
     },
     "python test_ftp_cli_driver.py": {
-      "test": "green"
+      "test": "failed"
     },
     "python test_ftp_connection_error.py": {
       "test": "green"
@@ -111,7 +111,7 @@
       "code_quality": "green"
     },
     "tools\\analyze_code.bat": {
-      "code_quality": "green"
+      "code_quality": "failed"
     }
   },
   "analysis_code_quality_answered": true,
