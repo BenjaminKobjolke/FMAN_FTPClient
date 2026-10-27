@@ -51,7 +51,7 @@ This plugin includes several optimizations for better remote file access perform
 - **Connection Pooling**: Reuses FTP and SFTP connections instead of creating new ones for each operation.
 - **NOOP Validation Caching**: Only validates connections every 5 seconds instead of on every operation (~99% reduction in validation overhead).
 - **Large Directory Support**: Increased stat cache from 5,000 to 20,000 entries to prevent cache eviction in large directories.
-- **Smart Connection Management**: Automatically closes stale connections and limits pool size to prevent "too many connections" errors.
+- **Smart Connection Management**: Automatically closes connections that have been idle for more than two minutes.
 - **Optional Fast Mode**: Toggle detailed stats on/off for faster directory listings when metadata isn't needed.
 - **Streaming Transfers**: Copies and moves start while the folder tree is still being walked. The walk uses its own connection.
 - **Parallel Transfers**: Downloads and uploads, copies and moves alike, run 3 files at once (`PARALLEL_TRANSFERS` in `ftpclient/transfers.py`), each on its own connection. Add or remove workers with `+` / `−` in the progress dialog; a removed worker finishes its file first. A move deletes each source file right after its own copy, and a source folder once it is empty. Server-to-server transfers stay sequential.

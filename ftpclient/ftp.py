@@ -37,9 +37,6 @@ class FtpWrapper():
     __pool_lock = threading.Lock()
     # Connection timeout: close connections idle for more than 2 minutes
     __CONNECTION_TIMEOUT = 120
-    # Max pool size: limit to 3 FTPHost objects per server
-    # (each FTPHost can spawn multiple child connections)
-    __MAX_POOL_SIZE = 3
     # NOOP validation cache: only validate connection if last check was this long ago
     __NOOP_CHECK_INTERVAL = 5.0  # seconds
 
@@ -216,29 +213,15 @@ class FtpWrapper():
         """Remove connections that have been idle for too long."""
         current_time = time.time()
         # A connection in use is never idle, however old its timestamp.
-        idle = {
-            conn_hash: timestamp
+        stale_hashes = [
+            conn_hash
             for conn_hash, timestamp in self.__conn_timestamps.items()
-            if conn_hash not in self.__in_use}
-        stale_hashes = []
-
-        for conn_hash, timestamp in idle.items():
-            if current_time - timestamp > self.__CONNECTION_TIMEOUT:
-                stale_hashes.append(conn_hash)
+            if conn_hash not in self.__in_use
+            and current_time - timestamp > self.__CONNECTION_TIMEOUT
+        ]
 
         for conn_hash in stale_hashes:
             self._remove_connection(conn_hash)
-            del idle[conn_hash]
-
-        # Enforce max pool size (remove oldest connections)
-        if len(self.__conn_pool) > self.__MAX_POOL_SIZE:
-            sorted_conns = sorted(
-                idle.items(),
-                key=lambda x: x[1]
-            )
-            excess_count = len(self.__conn_pool) - self.__MAX_POOL_SIZE
-            for conn_hash, _ in sorted_conns[:excess_count]:
-                self._remove_connection(conn_hash)
 
     @classmethod
     def close_all_connections(cls):

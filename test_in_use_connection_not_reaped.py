@@ -69,3 +69,30 @@ assert transfer.hash not in pool and host.closed, \
     'once released and idle, the connection is reaped as before'
 
 print('ok: connections in use are not reaped by the idle cleanup')
+
+# Fresh worker connections are retained regardless of pool size. The timeout,
+# rather than a global size limit, reaps them after they have been idle.
+workers = [
+    ftp.FtpWrapper('ftp://worker{}:pw@example.com:2121/file'.format(i))
+    for i in range(4)
+]
+worker_hosts = [FakeHost() for _ in workers]
+for worker, worker_host in zip(workers, worker_hosts):
+    pool[worker.hash] = worker_host
+    timestamps[worker.hash] = time.time()
+
+other._cleanup_stale_connections()
+assert all(worker.hash in pool for worker in workers), \
+    'fresh idle connections must not be removed because of pool size'
+assert all(not worker_host.closed for worker_host in worker_hosts), \
+    'fresh idle connections must stay open regardless of pool size'
+
+for worker in workers:
+    make_idle(worker)
+other._cleanup_stale_connections()
+assert all(worker.hash not in pool for worker in workers), \
+    'connections idle beyond the timeout must be reaped'
+assert all(worker_host.closed for worker_host in worker_hosts), \
+    'reaped connections must be closed'
+
+print('ok: fresh connections stay open until the idle timeout')
