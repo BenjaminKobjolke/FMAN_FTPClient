@@ -17,6 +17,7 @@ from fman.url import as_url, splitscheme
 
 from .connections import is_ftp
 from .ftp import FtpWrapper
+from .transfers import upload_edited_file
 
 
 class _UploadOnSave:
@@ -111,7 +112,7 @@ class FtpListener(DirectoryPaneListener):
         try:
             fs.copy(url, tmp_url)
             watcher = _UploadOnSave(
-                tmp_path, lambda: fs.copy(tmp_url, url)
+                tmp_path, lambda: upload_edited_file(tmp_url, url)
             )
             if command_name == 'open_file':
                 _open_local_files([tmp_path], self.pane)

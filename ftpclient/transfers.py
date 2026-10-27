@@ -4,7 +4,7 @@ import threading
 from io import UnsupportedOperation
 from typing import Callable
 
-from fman import Task, fs, show_status_message
+from fman import Task, fs, show_status_message, submit_task
 from fman.url import basename, dirname, join as urljoin, splitscheme
 
 from .connections import connection_for, is_file, is_ftp
@@ -100,6 +100,17 @@ class TransferSequence(Task):
         for task in self._tasks:
             self.check_canceled()
             self.run(task)
+
+
+class EditUpload(TransferSequence):
+    """Upload of a file being edited from the server."""
+    # The edit alert is modal; only a modal window opens in front of it.
+    keeps_focus = True
+
+
+def upload_edited_file(src_url: str, dst_url: str) -> None:
+    submit_task(EditUpload(
+        'Uploading ' + basename(src_url), list(fs.prepare_copy(src_url, dst_url))))
 
 
 def _remote_size(ftp_wrapper):

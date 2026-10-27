@@ -126,6 +126,8 @@ connections.is_ftp = lambda value: value in ('ftp', 'ftps', 'sftp') or \
     value.startswith(('ftp://', 'ftps://', 'sftp://'))
 ftp = types.ModuleType('ftpclient.ftp')
 ftp.FtpWrapper = object
+transfers = types.ModuleType('ftpclient.transfers')
+transfers.upload_edited_file = lambda *args: None
 
 sys.modules.update({
     'fman': fman,
@@ -139,6 +141,7 @@ sys.modules.update({
     'ftpclient': package,
     'ftpclient.connections': connections,
     'ftpclient.ftp': ftp,
+    'ftpclient.transfers': transfers,
 })
 
 listeners = importlib.import_module('ftpclient.listeners')

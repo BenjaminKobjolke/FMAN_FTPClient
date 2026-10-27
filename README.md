@@ -6,7 +6,7 @@ A [fman++](https://fman.io/) FTP and SFTP client. FTP support uses the powerful 
 
 ### Commands
 
-- **Edit remote file** (F4 / Enter): Open an FTP or SFTP file in the configured editor or default app. Saves upload automatically while the “Done editing” dialog is open; click OK when finished.
+- **Edit remote file** (F4 / Enter): Open an FTP or SFTP file in the configured editor or default app. Each save uploads automatically and shows its progress in front of the “Done editing” dialog; click OK when finished.
 - **Open ftp location** (`open_ftp_location`): Connect to an FTP, FTPS or SFTP server using its URL.
 - **Add ftp bookmark** (`add_ftp_bookmark`): Bookmark the current or a custom FTP/SFTP URL.
 - **Import FTP accounts** (`import_ftp_accounts`): Import saved sites from WinSCP, FileZilla or NppFTP as FTP/SFTP bookmarks.
