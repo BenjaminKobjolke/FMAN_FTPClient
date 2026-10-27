@@ -1,0 +1,46 @@
+Metadata-Version: 2.5
+Name: python-ftp-account-readers
+Version: 0.1.0
+Summary: Read saved FTP accounts from WinSCP, FileZilla and Notepad++ NppFTP
+License-File: LICENSE
+Requires-Python: >=3.12
+Requires-Dist: pycryptodome>=4.0.1
+Description-Content-Type: text/markdown
+
+# python-ftp-account-readers
+
+Read saved FTP, FTPS, and SFTP sites from WinSCP, FileZilla, and Notepad++ NppFTP. This package
+contains readers only; it does not modify the source applications' settings.
+
+## Install
+
+```sh
+uv add "python-ftp-account-readers @ git+https://github.com/BenjaminKobjolke/python-ftp-account-readers.git@v0.1.0"
+```
+
+## Usage
+
+```python
+from ftp_account_readers import read_filezilla, read_nppftp, read_winscp
+
+accounts = read_filezilla() + read_nppftp() + read_winscp()
+for account in accounts:
+    print(account.describe())
+```
+
+You can pass an explicit `Path` to `read_filezilla(path)` or `read_nppftp(path)`. Their defaults
+are `%APPDATA%/FileZilla/sitemanager.xml` and
+`%APPDATA%/Notepad++/plugins/config/NppFTP/NppFTP.xml`. WinSCP sessions are read from the current
+user's `Software\Martin Prikryl\WinSCP 2\Sessions` registry key on Windows.
+
+The public API also includes `FtpAccount`, `FtpProtocol`, and `is_winscp_available()`,
+`is_filezilla_available()`, and `is_nppftp_available()`.
+
+## Limits
+
+- WinSCP reading is Windows-only because sessions are stored in the Windows registry.
+- FileZilla master-password protected entries cannot be decrypted; they are returned with an empty
+  password and a warning is logged.
+- NppFTP passwords encrypted with a user-set master password cannot be decrypted. The default
+  built-in key is supported.
+- This package does not write accounts back to any application.
