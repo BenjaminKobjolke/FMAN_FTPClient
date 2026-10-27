@@ -68,6 +68,8 @@ This plugin includes several optimizations for better remote file access perform
 
 The offline checks are root-level scripts run with `python test_<name>.py`. `test_ftp_fs.py` and `test_sftp_fs.py` use local throwaway servers, so no real account is needed. The FTP server packages are test-only and live in `test-vendor/`, outside the plugin: pyftpdlib 2.2.0, pyasyncore 1.0.5, pyasynchat 1.0.5 and pyOpenSSL 26.4.0. Create that folder with `tools\vendor_test_deps.bat` (requires `uv` and internet access). `test_ftp_fs.py` skips while those packages are missing.
 
+`tools\ftp_cli_driver.bat` provides isolated connect, list, upload, download, delete and sample account-import commands for automatic checks; see [the CLI driver guide](docs/FTP_CLI_DRIVER.md).
+
 ## TODO
 - Allow setting file/folder permissions, if applicable.
 
