@@ -108,6 +108,7 @@ fman.show_alert = lambda *args, **kwargs: None
 fman.show_status_message = lambda *args, **kwargs: None
 
 fman_url = types.ModuleType('fman.url')
+fman_url.as_url = lambda path: path
 fman_url.splitscheme = lambda url: tuple(url.split('://', 1))
 
 thread = types.ModuleType('fman.impl.util.qt.thread')

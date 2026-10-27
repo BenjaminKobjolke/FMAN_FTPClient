@@ -31,6 +31,7 @@ def make_fman_url() -> ModuleType:
     url.basename = lambda value: value.rsplit('/', 1)[-1]
     url.dirname = lambda value: value.rsplit('/', 1)[0]
     url.join = lambda *parts: '/'.join(parts)
+    url.as_url = lambda value: value
     url.splitscheme = lambda value: (
         value[:value.index('://') + 3], value[value.index('://') + 3:])
     return url
@@ -72,3 +73,41 @@ class FakeWrapper:
             on_chunk(block)
 
         self.conn._session.retrbinary('RETR ' + self.path, write_chunk)
+
+
+def load_filesystems(
+    test_directory: str, task_type: type = object
+) -> tuple[ModuleType, ModuleType]:
+    """Load the FTP filesystem module with the fman API stubs used by offline checks."""
+    fake_fman = types.ModuleType('fman')
+    fake_fman.__path__ = []
+    fake_fman.load_json = lambda name, default=None, save_on_quit=False: \
+        {} if default is None else default
+    fake_fman.show_status_message = lambda *args, **kwargs: None
+    fake_fman.Task = task_type
+    fake_fman.submit_task = lambda task: None
+
+    fman_fs = types.ModuleType('fman.fs')
+    fman_fs.FileSystem = type('FileSystem', (), {})
+    fman_fs.cached = lambda method: method
+    fman_fs.notify_file_added = lambda url: None
+    fman_fs.notify_file_removed = lambda url: None
+    fman_fs.notify_file_changed = lambda url: None
+    fake_fman.fs = fman_fs
+
+    fman_url = make_fman_url()
+    sys.modules.update({
+        'fman': fake_fman,
+        'fman.fs': fman_fs,
+        'fman.url': fman_url,
+    })
+    package = types.ModuleType('ftpclient')
+    package.__path__ = [os.path.join(test_directory, 'ftpclient')]
+    sys.modules['ftpclient'] = package
+    spec = importlib.util.spec_from_file_location(
+        'ftpclient.filesystems',
+        os.path.join(test_directory, 'ftpclient', 'filesystems.py'))
+    filesystems = importlib.util.module_from_spec(spec)
+    sys.modules['ftpclient.filesystems'] = filesystems
+    spec.loader.exec_module(filesystems)
+    return fman_fs, filesystems

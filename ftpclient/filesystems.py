@@ -2,9 +2,10 @@ import errno
 import io
 import stat
 from datetime import datetime
+from typing import Iterator
 from urllib.parse import unquote, urlparse
 
-from fman import fs, load_json, show_status_message, submit_task
+from fman import Task, fs, load_json, show_status_message, submit_task
 from fman.fs import FileSystem, cached
 from fman.url import \
     basename, dirname as urldirname, splitscheme
@@ -49,8 +50,8 @@ class FtpFs(FileSystem):
 
     def _reload_panes(self, *paths):
         # Same as Ctrl+R in every pane showing the folder of each path.
-        # ponytail: one LIST per call, so deleting or moving N files lists the
-        # folder N times; coalesce per folder if that ever gets slow.
+        # Each distinct parent folder is reloaded once; callers passing paths
+        # from multiple folders may still trigger one listing per folder.
         for folder in {urldirname(self.scheme + path) for path in paths}:
             fs.notify_file_changed(folder)
 
@@ -129,17 +130,42 @@ class FtpFs(FileSystem):
         show_status_message('Ready.', timeout_secs=0)
 
     def delete(self, path):
+        # Internal callers (transfers._delete_source) need it synchronous.
+        for entry_path, is_dir, is_top in self._delete_entries(path, is_top=True):
+            self._delete_entry(entry_path, is_dir, is_top)
+
+    def prepare_delete(self, path: str) -> Iterator[Task]:
+        # Yield one task per entry so fman can show progress and cancel between entries.
+        for entry_path, is_dir, is_top in self._delete_entries(path, is_top=True):
+            yield Task('Deleting ' + entry_path.rsplit('/', 1)[-1], size=1,
+                       fn=self._delete_entry,
+                       args=(entry_path, is_dir, is_top))
+
+    def _delete_entries(self, path, is_top=False):
+        is_dir = self.is_dir(path)
+        if is_dir:
+            for name in self.iterdir(path):
+                yield from self._delete_entries(path + '/' + name)
+        yield path, is_dir, is_top
+
+    def _delete_entry(self, path, is_dir, is_top):
         with connection_for(self.scheme + path) as ftp:
-            if self.is_dir(path):
-                ftp.conn.rmtree(ftp.path)
+            if is_dir:
+                ftp.conn.rmdir(ftp.path)
             else:
                 ftp.conn.remove(ftp.path)
-        self._notify_removed(path)
-        self._reload_panes(path)
+        if is_top:
+            # Only the selected item needs to notify and refresh its parent.
+            self._notify_removed(path)
+            self._reload_panes(path)
 
     def move_to_trash(self, path):
         # FTP has no trash, so deleting is the closest thing.
         self.delete(path)
+
+    def prepare_trash(self, path: str) -> Iterator[Task]:
+        # "Move to trash" (F8) gets the same per-entry tasks.
+        return self.prepare_delete(path)
 
     def mkdir(self, path):
         # fman's makedirs(exist_ok=True) relies on this; ftputil's makedirs()

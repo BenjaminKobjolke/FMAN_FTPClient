@@ -172,6 +172,11 @@ class SftpHost:
         self._session.remove(path)
         self._invalidate(path)
 
+    def rmdir(self, path: str) -> None:
+        path = self._normalize(path)
+        self._session.rmdir(path)
+        self._invalidate(path)
+
     def rename(self, source: str, destination: str) -> None:
         source = self._normalize(source)
         destination = self._normalize(destination)
@@ -191,17 +196,6 @@ class SftpHost:
         except OSError:
             if not self.path.isdir(path):
                 raise
-        self._invalidate(path)
-
-    def rmtree(self, path: str) -> None:
-        path = self._normalize(path)
-        for name in self.listdir(path):
-            child = posixpath.join(path, name)
-            if stat.S_ISDIR(self.lstat(child).st_mode):
-                self.rmtree(child)
-            else:
-                self.remove(child)
-        self._session.rmdir(path)
         self._invalidate(path)
 
     def close(self) -> None:
