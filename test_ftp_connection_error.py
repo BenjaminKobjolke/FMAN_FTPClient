@@ -2,6 +2,7 @@
 
 Run: python test_ftp_connection_error.py
 """
+import importlib
 import os
 from ftp_test_support import load_ftp_module
 
@@ -19,7 +20,7 @@ ftp.ftputil.FTPHost = _fail
 try:
     with ftp.FtpWrapper('ftp://user:pw@example.com:2121/dir'):
         raise AssertionError('expected FtpConnectionError')
-except ftp.FtpConnectionError as e:
+except importlib.import_module('ftpclient.ftp_session').FtpConnectionError as e:
     message = str(e)
 
 assert 'ftp://user@example.com:2121' in message, message

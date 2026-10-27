@@ -61,3 +61,14 @@ class FakeWrapper:
     ) -> None:
         kwargs = {'callback': on_chunk} if on_chunk is not None else {}
         self.conn._session.storbinary('STOR ' + self.path, src_file, **kwargs)
+
+    def download(
+        self,
+        dst_file: BinaryIO,
+        on_chunk: Callable[[bytes], None],
+    ) -> None:
+        def write_chunk(block: bytes) -> None:
+            dst_file.write(block)
+            on_chunk(block)
+
+        self.conn._session.retrbinary('RETR ' + self.path, write_chunk)

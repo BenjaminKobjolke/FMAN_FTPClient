@@ -100,6 +100,7 @@ package = types.ModuleType('ftpclient')
 package.__path__ = [os.path.join(HERE, 'ftpclient')]
 sys.modules['ftpclient'] = package
 filesystems = importlib.import_module('ftpclient.filesystems')
+transfers = importlib.import_module('ftpclient.transfers')
 
 
 class FakeConn:
@@ -135,7 +136,7 @@ class FakeWrapper:
         self.conn.storbinary('STOR ' + self.path, src_file, callback)
 
 
-filesystems.connection_for = lambda url: FakeWrapper(url)
+transfers.connection_for = lambda url: FakeWrapper(url)
 
 with tempfile.TemporaryDirectory() as tmp_dir:
     with open(os.path.join(tmp_dir, 'a.bin'), 'wb') as f:
@@ -194,7 +195,7 @@ fs.is_dir = lambda url: False
 # Between FTP and this machine, fman runs several transfers at once. Between
 # two FTP servers it does not.
 local, remote = 'file:///tmp/a', 'ftp://example.com/a'
-parallel = filesystems.PARALLEL_TRANSFERS
+parallel = transfers.PARALLEL_TRANSFERS
 assert ftp_fs.get_parallel_transfers(remote, local) == parallel, 'download'
 assert ftp_fs.get_parallel_transfers(local, remote) == parallel, 'upload'
 assert ftp_fs.get_parallel_transfers(remote, 'ftps://other/a') == 1

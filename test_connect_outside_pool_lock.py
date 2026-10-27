@@ -6,6 +6,7 @@ listing, waited for that greeting forever.
 
 Run: python test_connect_outside_pool_lock.py
 """
+import importlib
 import os
 from ftp_test_support import load_ftp_module
 import threading
@@ -56,10 +57,11 @@ release_silent_server.set()
 stuck.join(2)
 
 # A server that never answers must raise after a while, not hang forever.
-session = ftp.FtpSession.__new__(ftp.FtpSession)
-ftp.FtpSession.connect = lambda self, host, port: None
-ftp.FtpSession.login = lambda self, user, password: None
-ftp.FtpSession.__init__(session, 'example.com', 21, 'user', 'pw')
-assert session.timeout == ftp.SOCKET_TIMEOUT_SECS, session.timeout
+ftp_session = importlib.import_module('ftpclient.ftp_session')
+session = ftp_session.FtpSession.__new__(ftp_session.FtpSession)
+ftp_session.FtpSession.connect = lambda self, host, port: None
+ftp_session.FtpSession.login = lambda self, user, password: None
+ftp_session.FtpSession.__init__(session, 'example.com', 21, 'user', 'pw')
+assert session.timeout == ftp_session.SOCKET_TIMEOUT_SECS, session.timeout
 
 print('ok: a silent server stalls only its own thread, and times out')

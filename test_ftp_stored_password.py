@@ -24,7 +24,7 @@ assert credentials.credential_target('ftps://alice@example.com:21') == \
     'FMAN_FTPClient:FTP:ftps://alice@example.com:21'
 
 received = []
-ftp.credentials.read_password = lambda target: 'saved-password'
+credentials.read_password = lambda target: 'saved-password'
 ftp.ftputil.FTPHost = lambda *args, **kwargs: received.append((args, kwargs)) or \
     types.SimpleNamespace(
         use_list_a_option=True,

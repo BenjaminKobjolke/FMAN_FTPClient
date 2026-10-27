@@ -3,7 +3,7 @@ import importlib
 import os
 import sys
 import types
-from ftp_test_support import FakeWrapper as BaseFakeWrapper, make_fman_url
+from ftp_test_support import FakeWrapper, make_fman_url
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -32,13 +32,19 @@ class DirectoryPaneListener:
     pass
 
 
+class QuicksearchItem:
+    def __init__(self, name, highlight=None):
+        self.name = name
+        self.highlight = highlight
+
+
 fman = types.ModuleType('fman')
 fman.__path__ = []
 fman.Task = Task
 fman.DirectoryPaneCommand = DirectoryPaneCommand
 fman.DirectoryPaneListener = DirectoryPaneListener
 fman.NO = fman.YES = 0
-fman.QuicksearchItem = lambda *args, **kwargs: None
+fman.QuicksearchItem = QuicksearchItem
 fman.load_json = lambda name, default=None, save_on_quit=False: \
     {} if default is None else default
 fman.save_json = lambda *args, **kwargs: None
@@ -91,6 +97,12 @@ filesystems = importlib.import_module('ftpclient.filesystems')
 columns = importlib.import_module('ftpclient.columns')
 listeners = importlib.import_module('ftpclient.listeners')
 commands = importlib.import_module('ftpclient.commands')
+web_url_commands = importlib.import_module('ftpclient.web_url_commands')
+
+items = list(commands._matching_items(['Alpha', 'beta', 'Gamma'], 'a'))
+assert [(item.name, item.highlight) for item in items] == [
+    ('Alpha', range(0, 1)), ('beta', range(3, 4)), ('Gamma', range(1, 2))]
+assert list(commands._matching_items(['beta'], 'x')) == []
 
 
 class FakeSession:
@@ -124,11 +136,6 @@ class FakeHost:
 
 
 host = FakeHost()
-
-
-class FakeWrapper(BaseFakeWrapper):
-    def download(self, dst_file, on_chunk):
-        raise AssertionError('download is not used in this test')
 
 
 filesystems.connection_for = lambda url: FakeWrapper(url, host)

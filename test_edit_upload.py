@@ -120,8 +120,9 @@ core_commands._open_local_files = lambda *args, **kwargs: None
 
 package = types.ModuleType('ftpclient')
 package.__path__ = [os.path.join(HERE, 'ftpclient')]
-filesystems = types.ModuleType('ftpclient.filesystems')
-filesystems.is_ftp = lambda scheme: scheme == 'ftp'
+connections = types.ModuleType('ftpclient.connections')
+connections.is_ftp = lambda value: value in ('ftp', 'ftps', 'sftp') or \
+    value.startswith(('ftp://', 'ftps://', 'sftp://'))
 ftp = types.ModuleType('ftpclient.ftp')
 ftp.FtpWrapper = object
 
@@ -135,7 +136,7 @@ sys.modules.update({
     'core': core,
     'core.commands': core_commands,
     'ftpclient': package,
-    'ftpclient.filesystems': filesystems,
+    'ftpclient.connections': connections,
     'ftpclient.ftp': ftp,
 })
 

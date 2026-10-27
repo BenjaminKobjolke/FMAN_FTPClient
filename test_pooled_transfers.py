@@ -4,7 +4,7 @@ import os
 import sys
 import tempfile
 import types
-from ftp_test_support import FakeWrapper as BaseFakeWrapper, make_fman_url
+from ftp_test_support import FakeWrapper, make_fman_url
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -57,6 +57,7 @@ package = types.ModuleType('ftpclient')
 package.__path__ = [os.path.join(HERE, 'ftpclient')]
 sys.modules['ftpclient'] = package
 filesystems = importlib.import_module('ftpclient.filesystems')
+transfers = importlib.import_module('ftpclient.transfers')
 wrapper_type = importlib.import_module('ftpclient.ftp').FtpWrapper
 
 
@@ -90,35 +91,27 @@ class FakeHost:
 host = FakeHost()
 
 
-class FakeWrapper(BaseFakeWrapper):
-    def download(self, dst_file, on_chunk):
-        def write_chunk(block):
-            dst_file.write(block)
-            on_chunk(block)
-
-        self.conn._session.retrbinary('RETR ' + self.path, write_chunk)
-
-
-filesystems.connection_for = lambda url: FakeWrapper(url, host)
+transfers.connection_for = lambda url: FakeWrapper(url, host)
+ftp_fs = filesystems.FtpFs()
+on_written = ftp_fs._notify_written
 
 with tempfile.TemporaryDirectory() as directory:
     src_path = os.path.join(directory, 'upload.bin')
     with open(src_path, 'wb') as output:
         output.write(b'abcdefg')
 
-    ftp_fs = filesystems.FtpFs()
-    upload = ftp_fs._prepare_file_copy(
+    upload = transfers.prepare_file_copy(
         'file://' + src_path.replace(os.sep, '/'),
-        'ftp://example.com/upload.bin')
+        'ftp://example.com/upload.bin', on_written)
     upload_chunks = []
     upload._transfer(upload_chunks.append)
     assert host._session.uploads == ['STOR /upload.bin']
     assert upload_chunks == [b'abc', b'def', b'g']
 
     dst_path = os.path.join(directory, 'download.bin')
-    download = ftp_fs._prepare_file_copy(
+    download = transfers.prepare_file_copy(
         'ftp://example.com/download.bin',
-        'file://' + dst_path.replace(os.sep, '/'))
+        'file://' + dst_path.replace(os.sep, '/'), on_written)
     download_chunks = []
     download._transfer(download_chunks.append)
     assert host._session.downloads == ['RETR /download.bin']
