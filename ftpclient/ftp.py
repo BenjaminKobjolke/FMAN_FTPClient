@@ -1,5 +1,4 @@
 import collections
-import ftplib
 import threading
 import time
 from typing import BinaryIO, Callable
@@ -7,44 +6,10 @@ from urllib.parse import unquote, urlparse
 
 from fman import load_json
 
-from . import credentials
-
-try:
-    import ftputil
-except ImportError:
-    import os
-    import sys
-    sys.path.append(
-        os.path.join(os.path.dirname(__file__), 'ftputil-3.4'))
-    import ftputil
-
-
-class FtpConnectionError(OSError):
-    """Raised when the FTP server cannot be reached or refuses the login."""
-
-
-# Without it, a server that accepts a connection but never answers - e.g. once
-# it has as many sessions as it allows - keeps the thread waiting forever, and
-# canceling cannot interrupt it. Also applies to each read on a data transfer.
-SOCKET_TIMEOUT_SECS = 30
-DEFAULT_PORTS: dict[str, int] = {'ftp': 21, 'ftps': 21, 'sftp': 22}
-
-
-class FtpSession(ftplib.FTP):
-    def __init__(self, host, port, user, password):
-        super().__init__(timeout=SOCKET_TIMEOUT_SECS)
-        self.connect(host, port)
-        # FIXME ftplib.error_temp: 421 Too many connections from the
-        #       same IP address.
-        self.login(user, password)
-
-
-class FtpTlsSession(ftplib.FTP_TLS):
-    def __init__(self, host, port, user, password):
-        super().__init__(timeout=SOCKET_TIMEOUT_SECS)
-        self.connect(host, port)
-        self.login(user, password)
-        self.prot_p()
+from .ftp_session import (
+    DEFAULT_PORTS, close_finished_children, close_host, format_base_url,
+    ftputil, open_ftp_host,
+)
 
 
 # Bumped whenever this plugin changes something on a server. The connection
@@ -144,31 +109,8 @@ class FtpWrapper():
 
     def _open_host(self):
         """Open an FTP host for this wrapper."""
-        session_factory = \
-            FtpTlsSession if self._scheme == 'ftps://' else FtpSession
-        try:
-            password = self._passwd or credentials.read_password(
-                credentials.credential_target(self._get_base_url())) or ''
-            ftp_host = ftputil.FTPHost(
-                self._host, self._port, self._user, password,
-                session_factory=session_factory)
-        except Exception as e:
-            # ftputil appends a multi-line "Debugging info" block; the
-            # first line carries the actual server response.
-            reason = str(e).splitlines()[0] if str(e) else repr(e)
-            raise FtpConnectionError(
-                'Could not connect to %s%s@%s:%d\n\n%s'
-                % (self._scheme, self._user, self._host, self._port, reason)
-            ) from e
-
-        # ponytail: some servers reject `LIST -a` with 550; ftputil 4.x
-        # defaults this off too. Hidden files just won't be listed.
-        ftp_host.use_list_a_option = False
-
-        # Increase stat cache size for large directories
-        # Default is 5000, which causes cache eviction in large dirs
-        ftp_host.stat_cache.resize(20000)
-        return ftp_host
+        return open_ftp_host(
+            self._scheme, self._host, self._port, self._user, self._passwd)
 
     def _release(self):
         # Call holding __pool_lock.
@@ -189,24 +131,10 @@ class FtpWrapper():
 
     def _after_use(self, host):
         """Clean up resources left by a completed FTP operation."""
-        self._cleanup_children(host)
+        close_finished_children(host)
 
-    def _cleanup_children(self, ftp_host):
-        """Close stale child connections that have finished their file transfers."""
-        stale_indices = []
-        for i, host in enumerate(ftp_host._children):
-            if host._file.closed:
-                try:
-                    host._session.close()
-                except Exception:
-                    pass
-                stale_indices.append(i)
-
-        # Remove stale children in reverse order to preserve indices
-        for i in reversed(stale_indices):
-            del ftp_host._children[i]
-
-    def _get_bookmark(self, url):
+    @staticmethod
+    def _get_bookmark(url):
         u = urlparse(url)
         url_without_path = u._replace(path='').geturl()
 
@@ -224,15 +152,9 @@ class FtpWrapper():
             threading.get_ident(), self._scheme, self._host, self._port, self._user,
             self._passwd))
 
-    @staticmethod
-    def _format_base_url(scheme, user, host, port):
-        """Format a connection URL without its path or password."""
-        user_info = '%s@' % user if user else ''
-        return '%s%s%s:%d' % (scheme, user_info, host, port)
-
     def _get_base_url(self):
         """Return the base URL (without path) for this connection."""
-        return self._format_base_url(
+        return format_base_url(
             self._scheme, self._user, self._host, self._port)
 
     @property
@@ -276,30 +198,14 @@ class FtpWrapper():
             self.conn._session.retrbinary(
                 'RETR ' + self.path, write_chunk)
 
-    def _remove_connection(self, conn_hash):
+    @classmethod
+    def _remove_connection(cls, conn_hash):
         """Remove a connection from the pool and close it."""
-        if conn_hash in self.__conn_pool:
-            self._close_host(self.__conn_pool[conn_hash])
-            del self.__conn_pool[conn_hash]
-            if conn_hash in self.__conn_timestamps:
-                del self.__conn_timestamps[conn_hash]
-            if conn_hash in self.__last_noop_check:
-                del self.__last_noop_check[conn_hash]
-            if conn_hash in self.__conn_base_urls:
-                del self.__conn_base_urls[conn_hash]
-
-    @staticmethod
-    def _close_host(host):
-        """Close child sessions and the pooled host, tolerating partial failure."""
-        for child in getattr(host, '_children', ())[:]:
-            try:
-                child.close()
-            except Exception:
-                pass
-        try:
-            host.close()
-        except Exception:
-            pass
+        if conn_hash in cls.__conn_pool:
+            close_host(cls.__conn_pool.pop(conn_hash))
+            cls.__conn_timestamps.pop(conn_hash, None)
+            cls.__last_noop_check.pop(conn_hash, None)
+            cls.__conn_base_urls.pop(conn_hash, None)
 
     def _cleanup_stale_connections(self):
         """Remove connections that have been idle for too long."""
@@ -334,7 +240,7 @@ class FtpWrapper():
         """Close all connections in the pool. Useful for cleanup."""
         with cls.__pool_lock:
             for conn_hash in list(cls.__conn_pool.keys()):
-                cls._close_host(cls.__conn_pool[conn_hash])
+                close_host(cls.__conn_pool[conn_hash])
             cls.__conn_pool.clear()
             cls.__conn_timestamps.clear()
             cls.__last_noop_check.clear()
@@ -344,18 +250,12 @@ class FtpWrapper():
     @classmethod
     def record_visited_path(cls, url):
         """Record the last visited path for a connection's base URL."""
-        u = urlparse(url)
-        url_without_path = u._replace(path='').geturl()
-
-        # Resolve bookmark alias to actual URL (same as _get_bookmark)
-        bookmarks = load_json('FTP Bookmarks.json', default={})
-        if url_without_path in bookmarks:
-            u = urlparse(bookmarks[url_without_path][0])._replace(path=u.path)
+        u = cls._get_bookmark(url)
 
         host = u.hostname or ''
         port = u.port or DEFAULT_PORTS.get(u.scheme, 21)
         user = unquote(u.username or '')
-        base_url = cls._format_base_url(
+        base_url = format_base_url(
             '%s://' % u.scheme, user, host, port)
 
         with cls.__pool_lock:
@@ -383,15 +283,7 @@ class FtpWrapper():
                 if url == base_url
             ]
             for conn_hash in hashes_to_remove:
-                if conn_hash in cls.__conn_pool:
-                    cls._close_host(cls.__conn_pool[conn_hash])
-                    del cls.__conn_pool[conn_hash]
-                    if conn_hash in cls.__conn_timestamps:
-                        del cls.__conn_timestamps[conn_hash]
-                    if conn_hash in cls.__last_noop_check:
-                        del cls.__last_noop_check[conn_hash]
-                    if conn_hash in cls.__conn_base_urls:
-                        del cls.__conn_base_urls[conn_hash]
+                cls._remove_connection(conn_hash)
             # Also clear the last visited path for this connection
             if base_url in cls.__last_visited_paths:
                 del cls.__last_visited_paths[base_url]

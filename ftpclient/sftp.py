@@ -18,7 +18,8 @@ except ImportError:
 from PyQt5.QtWidgets import QDialog, QInputDialog, QLineEdit
 
 from . import credentials
-from .ftp import FtpConnectionError, FtpWrapper
+from .ftp import FtpWrapper
+from .ftp_session import FtpConnectionError
 from .sftp_host import SftpHost
 
 

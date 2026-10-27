@@ -1,6 +1,6 @@
 from fman.fs import Column, query
 
-from .filesystems import is_ftp
+from .connections import is_ftp
 
 
 def _str(url, method):

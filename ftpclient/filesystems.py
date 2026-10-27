@@ -1,100 +1,18 @@
 import errno
 import io
-import re
 import stat
 from datetime import datetime
-from io import UnsupportedOperation
 from urllib.parse import unquote, urlparse
 
-import os
-
-from fman import fs, load_json, show_status_message, Task, submit_task
+from fman import fs, load_json, show_status_message, submit_task
 from fman.fs import FileSystem, cached
 from fman.url import \
-    basename, dirname as urldirname, join as urljoin, splitscheme
+    basename, dirname as urldirname, splitscheme
 
 from .connections import connection_for
-from .ftp import DEFAULT_PORTS, FtpConnectionError, invalidate_stat_caches
-
-try:
-    import ftputil.error
-except ImportError:
-    import os
-    import sys
-    sys.path.append(
-        os.path.join(os.path.dirname(__file__), 'ftputil-3.4'))
-    import ftputil.error
-
-is_ftp = re.compile('^(?:ftps?|sftp)://').match
-is_file = re.compile('^file://').match
-
-# Files fman transfers at once between FTP and this machine. Each worker holds
-# its own connection, so servers that limit connections per IP may refuse more.
-PARALLEL_TRANSFERS = 3
-
-
-class _Transfer(Task):
-    """
-    One file going to or from an FTP server.
-
-    The size is fixed up front: fman runs these as subtasks of its own copy or
-    move task, and a subtask cannot change its size once it has started.
-    """
-    def __init__(self, verb, name, size, transfer, on_done):
-        super().__init__('%s %s' % (verb, name), size=size)
-        self._verb = verb
-        self._transfer = transfer
-        self._on_done = on_done
-
-    def __call__(self):
-        size = self.get_size()
-        done = 0
-
-        def on_chunk(chunk):
-            nonlocal done
-            self.check_canceled()
-            done += len(chunk)
-            if size:
-                # min(): a file that grew since it was measured must not push
-                # the shared progress bar past the end.
-                self.set_progress(min(done, size))
-                show_status_message('%s... %d%% (%d KB / %d KB)' % (
-                    self._verb, done * 100 // size, done // 1024, size // 1024))
-
-        self._transfer(on_chunk)
-        show_status_message('Ready.', timeout_secs=0)
-        self._on_done()
-
-
-class _Sequence(Task):
-    """
-    Runs tasks in order under one progress dialog. A failure or a cancel stops
-    the rest, which keeps a move from deleting a source it did not copy.
-    """
-    def __init__(self, title, tasks):
-        super().__init__(title, size=sum(task.get_size() for task in tasks))
-        self._tasks = tasks
-
-    def __call__(self):
-        for task in self._tasks:
-            self.check_canceled()
-            self.run(task)
-
-
-def _remote_size(ftp_wrapper):
-    try:
-        with ftp_wrapper as ftp:
-            return ftp.conn.path.getsize(ftp.path)
-    except (OSError, ftputil.error.FTPError):
-        # Only costs the progress bar; the transfer reports the real error.
-        return 0
-
-
-def _local_size(path):
-    try:
-        return os.path.getsize(path)
-    except OSError:
-        return 0
+from .ftp import invalidate_stat_caches
+from .ftp_session import DEFAULT_PORTS, FtpConnectionError, ftputil
+from . import transfers
 
 
 class FtpFs(FileSystem):
@@ -246,91 +164,15 @@ class FtpFs(FileSystem):
         return path1 == path2
 
     def copy(self, src_url, dst_url):
-        submit_task(_Sequence(
+        submit_task(transfers.TransferSequence(
             'Copying ' + basename(src_url),
             list(self.prepare_copy(src_url, dst_url))))
 
     def prepare_copy(self, src_url, dst_url):
-        self._check_supported(src_url, dst_url)
-        return self._prepare_copy(src_url, dst_url)
-
-    @staticmethod
-    def _check_supported(src_url, dst_url):
-        # Checked eagerly: fman only tries the other file system when
-        # UnsupportedOperation is raised by prepare_copy/move itself. The walk
-        # is a generator, so fman starts transferring while it still runs.
-        if not all(is_ftp(url) or is_file(url) for url in (src_url, dst_url)):
-            raise UnsupportedOperation
+        return transfers.prepare_copy(src_url, dst_url, self._notify_written)
 
     def get_parallel_transfers(self, src_url, dst_url):
-        # FTP to FTP stays sequential: each worker would hold a connection to
-        # both servers.
-        if bool(is_ftp(src_url)) != bool(is_ftp(dst_url)):
-            return PARALLEL_TRANSFERS
-        return 1
-
-    def _prepare_copy(self, src_url, dst_url):
-        if not fs.is_dir(src_url):
-            yield self._prepare_file_copy(src_url, dst_url)
-            return
-        yield self._prepare_mkdir(dst_url)
-        for fname in fs.iterdir(src_url):
-            yield from self._prepare_copy(
-                urljoin(src_url, fname), urljoin(dst_url, fname))
-
-    @staticmethod
-    def _prepare_mkdir(dst_url):
-        result = Task(
-            'Creating ' + basename(dst_url), fn=fs.makedirs, args=(dst_url,),
-            kwargs={'exist_ok': True})
-        # fman's parallel workers must not start the files that go into the
-        # folder before it exists.
-        result.blocks_later_tasks = True
-        return result
-
-    def _prepare_file_copy(self, src_url, dst_url):
-        name = basename(src_url)
-        dst_path = splitscheme(dst_url)[1]
-
-        def written():
-            self._notify_written(dst_path)
-
-        if is_file(src_url):
-            src_path = splitscheme(src_url)[1]
-            ftp = connection_for(dst_url)
-
-            def upload(on_chunk):
-                # ftputil opens a second login per file; hosts limit logins per IP.
-                with ftp:
-                    with open(src_path, 'rb') as src:
-                        ftp.upload(src, on_chunk=on_chunk)
-
-            return _Transfer(
-                'Uploading', name, _local_size(src_path), upload, written)
-
-        src_ftp = connection_for(src_url)
-        if is_file(dst_url):
-            def download(on_chunk):
-                # ftputil opens a second login per file; hosts limit logins per IP.
-                with src_ftp:
-                    with open(dst_path, 'wb') as dst:
-                        src_ftp.download(dst, on_chunk)
-
-            # Local destination: nothing of ours to invalidate.
-            return _Transfer(
-                'Downloading', name, _remote_size(src_ftp), download,
-                lambda: fs.notify_file_added(dst_url))
-
-        dst_ftp = connection_for(dst_url)
-
-        def ftp_to_ftp(on_chunk):
-            with src_ftp, dst_ftp:
-                with src_ftp.conn.open(src_ftp.path, 'rb') as src, \
-                        dst_ftp.conn.open(dst_ftp.path, 'wb') as dst:
-                    dst_ftp.conn.copyfileobj(src, dst, callback=on_chunk)
-
-        return _Transfer(
-            'Copying', name, _remote_size(src_ftp), ftp_to_ftp, written)
+        return transfers.parallel_transfers(src_url, dst_url)
 
     @staticmethod
     def _is_rename(src_url, dst_url):
@@ -354,7 +196,7 @@ class FtpFs(FileSystem):
             self._reload_panes(
                 splitscheme(src_url)[1], splitscheme(dst_url)[1])
             return
-        submit_task(_Sequence(
+        submit_task(transfers.TransferSequence(
             'Moving ' + basename(src_url),
             list(self.prepare_move(src_url, dst_url))))
 
@@ -363,39 +205,7 @@ class FtpFs(FileSystem):
             # A rename is instant: fman's default task, which calls move(), is
             # all the progress it needs.
             return super().prepare_move(src_url, dst_url)
-        self._check_supported(src_url, dst_url)
-        return self._prepare_move(src_url, dst_url)
-
-    def _prepare_move(self, src_url, dst_url):
-        # File by file, so fman's workers can share a folder. Each source file
-        # goes right after its own copy; a failed copy keeps it.
-        name = basename(src_url)
-        if not fs.is_dir(src_url):
-            yield _Sequence('Moving ' + name, [
-                self._prepare_file_copy(src_url, dst_url),
-                Task('Deleting ' + name, fn=self._delete_source,
-                     args=(src_url,))])
-            return
-        yield self._prepare_mkdir(dst_url)
-        for fname in fs.iterdir(src_url):
-            yield from self._prepare_move(
-                urljoin(src_url, fname), urljoin(dst_url, fname))
-        delete = Task(
-            'Deleting ' + name, fn=self._delete_if_empty, args=(src_url,))
-        # The folder is only empty once the moves out of it are done.
-        delete.waits_for_earlier_tasks = True
-        yield delete
-
-    @staticmethod
-    def _delete_source(src_url):
-        if fs.exists(src_url):
-            fs.delete(src_url)
-
-    @classmethod
-    def _delete_if_empty(cls, src_url):
-        # Files that failed or were skipped keep their folder.
-        if next(iter(fs.iterdir(src_url)), None) is None:
-            cls._delete_source(src_url)
+        return transfers.prepare_move(src_url, dst_url, self._notify_written)
 
     def get_stats(self, path):
         with connection_for(self.scheme + path) as ftp:

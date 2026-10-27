@@ -13,7 +13,7 @@ except ImportError:
 
 from . import credentials
 from .bookmarks import bookmark_targets, save_bookmark
-from .ftp import FtpWrapper
+from .ftp_session import format_base_url
 
 
 SOURCE_LABELS = {
@@ -118,9 +118,9 @@ class ImportFtpAccounts(DirectoryPaneCommand):
 
         for account in accounts:
             scheme = getattr(account.protocol, 'value', account.protocol)
-            base_url = FtpWrapper._format_base_url(
+            base_url = format_base_url(
                 scheme + '://', account.user, account.host, account.port)
-            bookmark_url = FtpWrapper._format_base_url(
+            bookmark_url = format_base_url(
                 scheme + '://', quote(account.user, safe=''),
                 account.host, account.port)
             if base_url in targets.values() or bookmark_url in targets.values():

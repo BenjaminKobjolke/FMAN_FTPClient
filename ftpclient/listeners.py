@@ -15,7 +15,7 @@ from fman import (
 )
 from fman.url import splitscheme
 
-from .filesystems import is_ftp
+from .connections import is_ftp
 from .ftp import FtpWrapper
 
 
