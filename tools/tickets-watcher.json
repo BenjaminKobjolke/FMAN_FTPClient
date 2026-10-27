@@ -11,18 +11,24 @@
     "fix_ruff_issues_dry_run.bat",
     "graphify_update.bat",
     "vendor_import_deps.bat",
-    "vendor_sftp_deps.bat"
+    "vendor_sftp_deps.bat",
+    "vendor_test_deps.bat"
   ],
   "analysis_commands": [
     "python test_connect_outside_pool_lock.py",
     "python test_copy_single_dialog.py",
+    "python test_credential_store.py",
     "python test_edit_upload.py",
     "python test_ftp_connection_error.py",
     "python test_ftp_create_and_refresh.py",
+    "python test_ftp_fs.py",
+    "python test_ftp_stored_password.py",
+    "python test_import_accounts.py",
     "python test_in_use_connection_not_reaped.py",
     "python test_move_to_trash.py",
     "python test_pooled_transfers.py",
     "python test_root_path_no_connect.py",
+    "python test_sftp_fs.py",
     "python test_stat_cache_generation.py",
     "tools\\analyze_changed_and_new_files.bat",
     "tools\\analyze_code.bat"
@@ -53,6 +59,9 @@
     "python test_copy_single_dialog.py": {
       "test": "green"
     },
+    "python test_credential_store.py": {
+      "test": "green"
+    },
     "python test_edit_upload.py": {
       "test": "green"
     },
@@ -60,6 +69,15 @@
       "test": "green"
     },
     "python test_ftp_create_and_refresh.py": {
+      "test": "green"
+    },
+    "python test_ftp_fs.py": {
+      "test": "green"
+    },
+    "python test_ftp_stored_password.py": {
+      "test": "green"
+    },
+    "python test_import_accounts.py": {
       "test": "green"
     },
     "python test_in_use_connection_not_reaped.py": {
@@ -72,6 +90,9 @@
       "test": "green"
     },
     "python test_root_path_no_connect.py": {
+      "test": "green"
+    },
+    "python test_sftp_fs.py": {
       "test": "green"
     },
     "python test_stat_cache_generation.py": {
