@@ -1027,7 +1027,8 @@ project interpreter. These points override the Python rules above:
 
 - No uv, no `pyproject.toml`, no `install.bat` / `update.bat` /
   `tools/run_tests.bat` / `tools/run_integration_tests.bat`. Do not add them.
-- Third-party code is vendored (`ftpclient/ftputil-3.4/`), never pip-installed.
+- Third-party code is vendored (`ftpclient/ftputil-3.4/`,
+  `ftpclient/vendor-sftp/`, `ftpclient/vendor-import/`), never pip-installed.
   Do not refactor or reformat vendored code under these rules.
 - Tests are plain scripts `test_*.py` in the repo root that stub `fman` and Qt;
   run each with `python test_<name>.py`. New tests follow the same pattern.
