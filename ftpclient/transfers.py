@@ -1,10 +1,11 @@
 """Copy and move tasks between FTP servers and this machine."""
 import os
+import threading
 from io import UnsupportedOperation
 from typing import Callable
 
 from fman import Task, fs, show_status_message
-from fman.url import basename, join as urljoin, splitscheme
+from fman.url import basename, dirname, join as urljoin, splitscheme
 
 from .connections import connection_for, is_file, is_ftp
 from .ftp_session import ftputil
@@ -15,6 +16,23 @@ from .transfer_retry import (
 
 # Each worker holds a connection, and some servers limit them per client IP.
 PARALLEL_TRANSFERS = 3
+
+
+class _Folders:
+    """Create each destination folder once across a transfer's workers."""
+    def __init__(self):
+        self._locks_lock = threading.Lock()
+        self._locks = {}
+        self._done = set()
+
+    def ensure(self, url):
+        with self._locks_lock:
+            lock = self._locks.setdefault(url, threading.Lock())
+        with lock:
+            if url in self._done:
+                return
+            fs.makedirs(url, exist_ok=True)
+            self._done.add(url)
 
 
 class _Transfer(Task):
@@ -112,32 +130,31 @@ def parallel_transfers(src_url, dst_url) -> int:
 def prepare_copy(src_url, dst_url, on_written: Callable[[str], None]):
     check_supported(src_url, dst_url)
     batch = current_batch()
+    folders = _Folders()
     return with_retry_check(
-        batch, _prepare_copy(src_url, dst_url, on_written, batch))
+        batch, _prepare_copy(src_url, dst_url, on_written, batch, folders))
 
 
-def _prepare_copy(src_url, dst_url, on_written, batch):
+def _prepare_copy(src_url, dst_url, on_written, batch, folders):
     if not fs.is_dir(src_url):
         yield TrackedUnit(batch, (src_url, dst_url), lambda: prepare_file_copy(
-            src_url, dst_url, on_written))
+            src_url, dst_url, on_written,
+            make_parent=lambda: folders.ensure(dirname(dst_url))))
         return
-    yield _prepare_mkdir(dst_url)
+    yield _prepare_mkdir(dst_url, folders)
     for fname in fs.iterdir(src_url):
         yield from _prepare_copy(
             urljoin(src_url, fname), urljoin(dst_url, fname), on_written,
-            batch)
+            batch, folders)
 
 
-def _prepare_mkdir(dst_url):
+def _prepare_mkdir(dst_url, folders):
     result = Task(
-        'Creating ' + basename(dst_url), fn=fs.makedirs, args=(dst_url,),
-        kwargs={'exist_ok': True})
-    # Parallel workers must not start files in the folder before it exists.
-    result.blocks_later_tasks = True
+        'Creating ' + basename(dst_url), fn=folders.ensure, args=(dst_url,))
     return result
 
 
-def prepare_file_copy(src_url, dst_url, on_written):
+def prepare_file_copy(src_url, dst_url, on_written, make_parent=lambda: None):
     name = basename(src_url)
     dst_path = splitscheme(dst_url)[1]
 
@@ -149,6 +166,7 @@ def prepare_file_copy(src_url, dst_url, on_written):
         ftp = connection_for(dst_url)
 
         def upload(on_chunk):
+            make_parent()
             with ftp:
                 with open(src_path, 'rb') as src:
                     ftp.upload(src, on_chunk=on_chunk)
@@ -159,6 +177,7 @@ def prepare_file_copy(src_url, dst_url, on_written):
     src_ftp = connection_for(src_url)
     if is_file(dst_url):
         def download(on_chunk):
+            make_parent()
             with src_ftp:
                 with open(dst_path, 'wb') as dst:
                     src_ftp.download(dst, on_chunk)
@@ -170,6 +189,7 @@ def prepare_file_copy(src_url, dst_url, on_written):
     dst_ftp = connection_for(dst_url)
 
     def ftp_to_ftp(on_chunk):
+        make_parent()
         with src_ftp, dst_ftp:
             with src_ftp.conn.open(src_ftp.path, 'rb') as src, \
                     dst_ftp.conn.open(dst_ftp.path, 'wb') as dst:
@@ -183,29 +203,32 @@ def prepare_file_copy(src_url, dst_url, on_written):
 def prepare_move(src_url, dst_url, on_written: Callable[[str], None]):
     check_supported(src_url, dst_url)
     batch = current_batch()
+    folders = _Folders()
     return with_retry_check(
-        batch, _prepare_move(src_url, dst_url, on_written, batch))
+        batch, _prepare_move(src_url, dst_url, on_written, batch, folders))
 
 
-def _prepare_file_move(src_url, dst_url, on_written):
+def _prepare_file_move(src_url, dst_url, on_written, folders):
     name = basename(src_url)
     # A failed copy must leave its source in place.
     return TransferSequence('Moving ' + name, [
-        prepare_file_copy(src_url, dst_url, on_written),
+        prepare_file_copy(
+            src_url, dst_url, on_written,
+            make_parent=lambda: folders.ensure(dirname(dst_url))),
         Task('Deleting ' + name, fn=_delete_source, args=(src_url,))])
 
 
-def _prepare_move(src_url, dst_url, on_written, batch):
+def _prepare_move(src_url, dst_url, on_written, batch, folders):
     name = basename(src_url)
     if not fs.is_dir(src_url):
         yield TrackedUnit(batch, (src_url, dst_url), lambda: _prepare_file_move(
-            src_url, dst_url, on_written))
+            src_url, dst_url, on_written, folders))
         return
-    yield _prepare_mkdir(dst_url)
+    yield _prepare_mkdir(dst_url, folders)
     for fname in fs.iterdir(src_url):
         yield from _prepare_move(
             urljoin(src_url, fname), urljoin(dst_url, fname), on_written,
-            batch)
+            batch, folders)
     delete = Task(
         'Deleting ' + name, fn=_delete_if_empty, args=(src_url,))
     # The folder is only empty once the moves out of it are done.
