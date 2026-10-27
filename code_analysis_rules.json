@@ -65,8 +65,8 @@
       "__pycache__/**",
       ".git/**",
       "code_analysis_results/**",
-      "ftpclient/ftputil-3.4/**",
-      "ftpclient/vendor-sftp/**"
+      "ftpclient/ftputil-3.4",
+      "ftpclient/vendor-sftp"
     ]
   }
 }
