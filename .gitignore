@@ -1,6 +1,8 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+# fman installs by cloning, so vendored compiled extensions must be committed
+!*.pyd
 *$py.class
 
 # C extensions
