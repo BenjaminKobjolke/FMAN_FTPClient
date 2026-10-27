@@ -55,6 +55,7 @@ This plugin includes several optimizations for better remote file access perform
 - **Optional Fast Mode**: Toggle detailed stats on/off for faster directory listings when metadata isn't needed.
 - **Streaming Transfers**: Copies and moves start while the folder tree is still being walked. The walk uses its own connection.
 - **Parallel Transfers**: Downloads and uploads, copies and moves alike, run 3 files at once (`PARALLEL_TRANSFERS` in `ftpclient/transfers.py`), each on its own connection. Add or remove workers with `+` / `−` in the progress dialog; a removed worker finishes its file first. A move deletes each source file right after its own copy, and a source folder once it is empty. Server-to-server transfers stay sequential.
+- The FTP transfer window can be minimized to the status bar with its `–` button.
 
 ## Saved passwords and host keys
 
