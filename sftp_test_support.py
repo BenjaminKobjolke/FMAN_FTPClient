@@ -135,11 +135,15 @@ class LocalSftpHandle(paramiko.SFTPHandle):
 
 
 class LocalSftpInterface(paramiko.SFTPServerInterface):
+    def __init__(self, server, root: str | None = None) -> None:
+        super().__init__(server)
+        self._root = root or temp_root
+
     def _local(self, path):
         path = posixpath.normpath('/' + path.lstrip('/'))
         local_path = os.path.abspath(os.path.join(
-            temp_root, *path.lstrip('/').split('/')))
-        if os.path.commonpath((temp_root, local_path)) != temp_root:
+            self._root, *path.lstrip('/').split('/')))
+        if os.path.commonpath((self._root, local_path)) != self._root:
             raise OSError(errno.EACCES, 'outside test root')
         return local_path
 
@@ -199,7 +203,8 @@ class PasswordServer(paramiko.ServerInterface):
 
 
 class SftpTestServer:
-    def __init__(self):
+    def __init__(self, root: str | None = None) -> None:
+        self.root = root or temp_root
         self.host_key = paramiko.RSAKey.generate(2048)
         self.listener = socket.socket()
         self.listener.bind(('127.0.0.1', 0))
@@ -222,7 +227,7 @@ class SftpTestServer:
         transport = paramiko.Transport(client)
         transport.add_server_key(self.host_key)
         transport.set_subsystem_handler(
-            'sftp', paramiko.SFTPServer, LocalSftpInterface)
+            'sftp', paramiko.SFTPServer, LocalSftpInterface, self.root)
         try:
             transport.start_server(server=PasswordServer())
             while transport.is_active():

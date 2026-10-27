@@ -56,12 +56,13 @@ def _write_certificate(directory: str) -> str:
 class FtpTestServer:
     """Run a password-protected FTP server on a local ephemeral port."""
 
-    def __init__(self, tls: bool = False) -> None:
+    def __init__(self, tls: bool = False, root: str | None = None) -> None:
         from pyftpdlib.authorizers import DummyAuthorizer
         from pyftpdlib.handlers import FTPHandler, TLS_FTPHandler
         from pyftpdlib.servers import FTPServer
 
-        self.root = tempfile.mkdtemp(prefix='ftpclient-ftp-')
+        self._owns_root = root is None
+        self.root = root or tempfile.mkdtemp(prefix='ftpclient-ftp-')
         self.cert_root = tempfile.mkdtemp(prefix='ftpclient-ftps-') if tls else None
         authorizer = DummyAuthorizer()
         authorizer.add_user(
@@ -96,6 +97,7 @@ class FtpTestServer:
     def close(self) -> None:
         self.running = False
         self.thread.join(timeout=2)
-        shutil.rmtree(self.root, ignore_errors=True)
+        if self._owns_root:
+            shutil.rmtree(self.root, ignore_errors=True)
         if self.cert_root is not None:
             shutil.rmtree(self.cert_root, ignore_errors=True)
