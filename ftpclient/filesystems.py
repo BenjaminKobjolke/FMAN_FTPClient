@@ -4,7 +4,6 @@ import re
 import stat
 from datetime import datetime
 from io import UnsupportedOperation
-from os.path import dirname, join as pathjoin
 from urllib.parse import unquote, urlparse
 
 import os
