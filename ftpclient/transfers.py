@@ -8,6 +8,10 @@ from fman.url import basename, join as urljoin, splitscheme
 
 from .connections import connection_for, is_file, is_ftp
 from .ftp_session import ftputil
+from .transfer_retry import (
+    TRANSIENT_ERRORS, TrackedUnit, current_batch, transfer_retries,
+    with_retry_check,
+)
 
 # Each worker holds a connection, and some servers limit them per client IP.
 PARALLEL_TRANSFERS = 3
@@ -15,13 +19,29 @@ PARALLEL_TRANSFERS = 3
 
 class _Transfer(Task):
     """One file transfer with progress based on its known size."""
-    def __init__(self, verb, name, size, transfer, on_done):
+    def __init__(self, verb, name, size, transfer, on_done, connections):
         super().__init__('%s %s' % (verb, name), size=size)
         self._verb = verb
+        self._name = name
         self._transfer = transfer
         self._on_done = on_done
+        self._connections = connections
 
     def __call__(self):
+        retries = transfer_retries()
+        for attempt in range(1, retries + 2):
+            try:
+                self._attempt()
+            except TRANSIENT_ERRORS:
+                if attempt > retries:
+                    raise
+                self._prepare_retry(attempt, retries)
+            else:
+                break
+        show_status_message('Ready.', timeout_secs=0)
+        self._on_done()
+
+    def _attempt(self):
         size = self.get_size()
         done = 0
 
@@ -36,8 +56,17 @@ class _Transfer(Task):
                     self._verb, done * 100 // size, done // 1024, size // 1024))
 
         self._transfer(on_chunk)
-        show_status_message('Ready.', timeout_secs=0)
-        self._on_done()
+
+    def _prepare_retry(self, attempt, retries):
+        self.check_canceled()
+        self.set_progress(0)
+        show_status_message(
+            'Retrying %s (%d/%d)...' % (self._name, attempt, retries))
+        # The pool hands a dead session back for a few seconds after its
+        # last check, so the retry would fail on it again.
+        for connection in self._connections:
+            connection.drop_connection()
+
 
 
 class TransferSequence(Task):
@@ -82,17 +111,21 @@ def parallel_transfers(src_url, dst_url) -> int:
 
 def prepare_copy(src_url, dst_url, on_written: Callable[[str], None]):
     check_supported(src_url, dst_url)
-    return _prepare_copy(src_url, dst_url, on_written)
+    batch = current_batch()
+    return with_retry_check(
+        batch, _prepare_copy(src_url, dst_url, on_written, batch))
 
 
-def _prepare_copy(src_url, dst_url, on_written):
+def _prepare_copy(src_url, dst_url, on_written, batch):
     if not fs.is_dir(src_url):
-        yield prepare_file_copy(src_url, dst_url, on_written)
+        yield TrackedUnit(batch, (src_url, dst_url), lambda: prepare_file_copy(
+            src_url, dst_url, on_written))
         return
     yield _prepare_mkdir(dst_url)
     for fname in fs.iterdir(src_url):
         yield from _prepare_copy(
-            urljoin(src_url, fname), urljoin(dst_url, fname), on_written)
+            urljoin(src_url, fname), urljoin(dst_url, fname), on_written,
+            batch)
 
 
 def _prepare_mkdir(dst_url):
@@ -120,7 +153,8 @@ def prepare_file_copy(src_url, dst_url, on_written):
                 with open(src_path, 'rb') as src:
                     ftp.upload(src, on_chunk=on_chunk)
 
-        return _Transfer('Uploading', name, _local_size(src_path), upload, written)
+        return _Transfer(
+            'Uploading', name, _local_size(src_path), upload, written, (ftp,))
 
     src_ftp = connection_for(src_url)
     if is_file(dst_url):
@@ -131,7 +165,7 @@ def prepare_file_copy(src_url, dst_url, on_written):
 
         return _Transfer(
             'Downloading', name, _remote_size(src_ftp), download,
-            lambda: fs.notify_file_added(dst_url))
+            lambda: fs.notify_file_added(dst_url), (src_ftp,))
 
     dst_ftp = connection_for(dst_url)
 
@@ -141,26 +175,37 @@ def prepare_file_copy(src_url, dst_url, on_written):
                     dst_ftp.conn.open(dst_ftp.path, 'wb') as dst:
                 dst_ftp.conn.copyfileobj(src, dst, callback=on_chunk)
 
-    return _Transfer('Copying', name, _remote_size(src_ftp), ftp_to_ftp, written)
+    return _Transfer(
+        'Copying', name, _remote_size(src_ftp), ftp_to_ftp, written,
+        (src_ftp, dst_ftp))
 
 
 def prepare_move(src_url, dst_url, on_written: Callable[[str], None]):
     check_supported(src_url, dst_url)
-    return _prepare_move(src_url, dst_url, on_written)
+    batch = current_batch()
+    return with_retry_check(
+        batch, _prepare_move(src_url, dst_url, on_written, batch))
 
 
-def _prepare_move(src_url, dst_url, on_written):
+def _prepare_file_move(src_url, dst_url, on_written):
+    name = basename(src_url)
+    # A failed copy must leave its source in place.
+    return TransferSequence('Moving ' + name, [
+        prepare_file_copy(src_url, dst_url, on_written),
+        Task('Deleting ' + name, fn=_delete_source, args=(src_url,))])
+
+
+def _prepare_move(src_url, dst_url, on_written, batch):
     name = basename(src_url)
     if not fs.is_dir(src_url):
-        # A failed copy must leave its source in place.
-        yield TransferSequence('Moving ' + name, [
-            prepare_file_copy(src_url, dst_url, on_written),
-            Task('Deleting ' + name, fn=_delete_source, args=(src_url,))])
+        yield TrackedUnit(batch, (src_url, dst_url), lambda: _prepare_file_move(
+            src_url, dst_url, on_written))
         return
     yield _prepare_mkdir(dst_url)
     for fname in fs.iterdir(src_url):
         yield from _prepare_move(
-            urljoin(src_url, fname), urljoin(dst_url, fname), on_written)
+            urljoin(src_url, fname), urljoin(dst_url, fname), on_written,
+            batch)
     delete = Task(
         'Deleting ' + name, fn=_delete_if_empty, args=(src_url,))
     # The folder is only empty once the moves out of it are done.

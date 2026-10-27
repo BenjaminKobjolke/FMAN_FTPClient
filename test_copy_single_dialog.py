@@ -131,6 +131,9 @@ class FakeWrapper:
     def __exit__(self, *exc):
         return False
 
+    def drop_connection(self):
+        pass
+
     def upload(self, src_file, on_chunk=None):
         callback = on_chunk or (lambda _chunk: None)
         self.conn.storbinary('STOR ' + self.path, src_file, callback)
@@ -146,16 +149,17 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     ftp_fs = filesystems.FtpFs()
 
     tasks = list(ftp_fs.prepare_copy(src, dst))
-    assert [t.get_title() for t in tasks] == ['Uploading a.bin'], tasks
+    assert [t.get_title() for t in tasks] == \
+        ['Uploading a.bin', 'Checking failed transfers'], tasks
     assert tasks[0].get_size() == SIZE, 'size must be known before it runs'
     tasks[0]()
     assert submitted == [], 'a subtask must not open a dialog of its own'
-    assert tasks[0].progress == SIZE
+    assert tasks[0]._unit.progress == SIZE
 
     ftp_fs.copy(src, dst)
     assert submitted == ['Copying a.bin'], 'a direct copy shows one dialog'
 
-    move, = ftp_fs.prepare_move(src, dst)
+    move, _check = ftp_fs.prepare_move(src, dst)
     assert move.get_size() == SIZE
     FakeConn.fail = True
     try:
@@ -181,14 +185,15 @@ fs.is_dir = lambda u: u == folder
 fs.iterdir = lambda u: ['x.bin'] if u == folder else []
 tasks = list(ftp_fs.prepare_move(folder, 'file:///tmp/dir'))
 assert [t.get_title() for t in tasks] == \
-    ['Creating dir', 'Moving x.bin', 'Deleting dir'], tasks
+    ['Creating dir', 'Moving x.bin', 'Deleting dir',
+     'Checking failed transfers'], tasks
 assert tasks[0].blocks_later_tasks, 'files wait for their folder'
-assert tasks[-1].waits_for_earlier_tasks, 'the folder waits for its files'
+assert tasks[2].waits_for_earlier_tasks, 'the folder waits for its files'
 deleted.clear()
-tasks[-1]()
+tasks[2]()
 assert deleted == [], 'a folder with files left in it is kept'
 fs.iterdir = lambda u: []
-tasks[-1]()
+tasks[2]()
 assert deleted == [folder], 'an emptied folder is deleted'
 fs.is_dir = lambda url: False
 

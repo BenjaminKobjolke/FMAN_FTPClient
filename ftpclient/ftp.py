@@ -129,6 +129,11 @@ class FtpWrapper():
                 self._after_use(self.__conn_pool[self.hash])
         return
 
+    def drop_connection(self):
+        """Close this thread's pooled session so the next `with` reconnects."""
+        with self.__pool_lock:
+            self._remove_connection(self.hash)
+
     def _after_use(self, host):
         """Clean up resources left by a completed FTP operation."""
         close_finished_children(host)

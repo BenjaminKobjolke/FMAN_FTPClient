@@ -10,6 +10,9 @@ from .bookmarks import bookmark_targets, save_bookmark
 from .connections import connection_for, is_ftp
 from .ftp import FtpWrapper
 from .ftp_session import FtpConnectionError
+from .transfer_retry import (
+    MAX_TRANSFER_RETRIES, parse_transfer_retries, transfer_retries,
+)
 
 
 def _matching_items(names, query):
@@ -259,6 +262,23 @@ class ToggleFtpDetailedStats(DirectoryPaneCommand):
                 'will be shown.\n\n'
                 'This includes size, date, permissions, owner, and group.'
             )
+
+
+class SetFtpTransferRetries(DirectoryPaneCommand):
+    def __call__(self):
+        text, ok = show_prompt(
+            'Retries per failed transfer (0-%d):' % MAX_TRANSFER_RETRIES,
+            str(transfer_retries()))
+        if not ok:
+            return
+        retries = parse_transfer_retries(text.strip())
+        if retries is None:
+            show_alert('Please enter a whole number from 0 to %d.'
+                       % MAX_TRANSFER_RETRIES)
+            return
+        settings = load_json('FTP Settings.json', default={}, save_on_quit=True)
+        settings['transfer_retries'] = retries
+        save_json('FTP Settings.json')
 
 
 class CloseFtpConnections(DirectoryPaneCommand):
