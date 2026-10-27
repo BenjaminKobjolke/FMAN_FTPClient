@@ -92,14 +92,14 @@ def main() -> None:
 
         result = run('import-accounts')
         assert result.returncode == 0, result.stdout + result.stderr
-        for expected in ('Imported 3 account(s)', 'ftp://Folder/site',
+        for expected in ('Imported 3 account(s)', 'ftp://Folder - site',
                          'ftps://secure', 'sftp://private'):
             assert expected in result.stdout, result.stdout
         bookmarks_path = os.path.join(state, 'fman_json', 'FTP Bookmarks.json')
         with open(bookmarks_path, encoding='utf-8') as stream:
             bookmarks = json.load(stream)
         assert set(bookmarks) >= {
-            'ftp://Folder/site', 'ftps://secure', 'sftp://private'}
+            'ftp://Folder - site', 'ftps://secure', 'sftp://private'}
 
         result = run('import-accounts')
         assert result.returncode == 0, result.stdout + result.stderr

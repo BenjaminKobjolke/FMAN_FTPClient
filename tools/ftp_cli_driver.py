@@ -194,6 +194,9 @@ def run_import_accounts(fixture: str, state: DriverState) -> None:
     install_stubs(state)
     accounts = read_accounts(fixture)
     fake_reader = types.ModuleType('ftp_account_readers')
+    fake_reader.__path__ = [str(
+        Path(__file__).resolve().parents[1] / 'ftpclient' / 'vendor-import' /
+        'ftp_account_readers')]
     fake_reader.is_winscp_available = lambda: True
     fake_reader.is_filezilla_available = lambda: False
     fake_reader.is_nppftp_available = lambda: False
