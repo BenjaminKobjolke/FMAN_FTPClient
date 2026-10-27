@@ -78,7 +78,7 @@
       "test": "green"
     },
     "tools\\analyze_changed_and_new_files.bat": {
-      "code_quality": "failed"
+      "code_quality": "green"
     },
     "tools\\analyze_code.bat": {
       "code_quality": "failed"
