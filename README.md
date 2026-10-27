@@ -64,12 +64,15 @@ This plugin includes several optimizations for better remote file access perform
 - Paramiko and its pinned dependencies are vendored under `ftpclient/vendor-sftp/`: Paramiko 5.1.0, cryptography 50.0.2, bcrypt 5.0.0, PyNaCl 1.6.2, cffi 2.1.1, pycparser 3.12 and invoke 3.0.3. `tools/vendor_sftp_deps.bat` downloads the pinned Windows wheels to reproduce that folder when updating the bundled packages.
 - FTP account readers and PyCryptodome are vendored under `ftpclient/vendor-import/`. `tools/vendor_import_deps.bat` downloads the pinned dependencies for importing accounts; the imported reader library is [python-ftp-account-readers](https://github.com/BenjaminKobjolke/python-ftp-account-readers).
 
+## Tests
+
+The offline checks are root-level scripts run with `python test_<name>.py`. `test_ftp_fs.py` and `test_sftp_fs.py` use local throwaway servers, so no real account is needed. The FTP server packages are test-only and live in `test-vendor/`, outside the plugin: pyftpdlib 2.2.0, pyasyncore 1.0.5, pyasynchat 1.0.5 and pyOpenSSL 26.4.0. Create that folder with `tools\vendor_test_deps.bat` (requires `uv` and internet access). `test_ftp_fs.py` skips while those packages are missing.
+
 ## TODO
 - Allow setting file/folder permissions, if applicable.
 
 ## Known issues
 - **Move to trash** permanently deletes files and folders because FTP and SFTP have no Trash.
-- Although there is -theoretically- **FTP_TLS** support, it has not been tested.
 - Servers that limit connections per IP may refuse some of the connections a copy opens (one for the walk, one per worker). Press `−` in the progress dialog to use fewer.
 - A password typed into a connection URL is visible in plain text; prompted SFTP passwords are saved in Windows Credential Manager.
 - Currently `ftputil` is loaded from a frozen copy included in the plugin source pointing to the **3.4** version. I have not found a better way to include it.

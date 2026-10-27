@@ -15,6 +15,7 @@ Features:
 - Moves go file by file: each source file is deleted right after its own copy,
   and a source folder once it is empty. A canceled or failed move leaves the
   files not yet moved in the source.
+- FTP and FTPS connections are checked automatically against a local test server.
 
 Bugfixes:
 
