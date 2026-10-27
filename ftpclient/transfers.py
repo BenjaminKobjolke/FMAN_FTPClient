@@ -89,6 +89,9 @@ class _Transfer(Task):
 
 class TransferSequence(Task):
     """Run transfer tasks in order and stop after a failure or cancellation."""
+    minimizable = True
+    icon = os.path.join(os.path.dirname(__file__), 'icons', 'ftp.svg')
+
     def __init__(self, title, tasks):
         super().__init__(title, size=sum(task.get_size() for task in tasks))
         self._tasks = tasks
