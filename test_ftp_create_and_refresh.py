@@ -3,6 +3,7 @@ import importlib
 import os
 import sys
 import types
+from ftp_test_support import FakeWrapper as BaseFakeWrapper, make_fman_url
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -56,13 +57,7 @@ fs.is_dir = lambda url: False
 fs.touch = lambda url: None
 fs.query = lambda url, method: None
 fman.fs = fs
-url = types.ModuleType('fman.url')
-url.basename = lambda value: value.rsplit('/', 1)[-1]
-url.dirname = lambda value: value.rsplit('/', 1)[0]
-url.join = lambda *parts: '/'.join(parts)
-url.splitscheme = lambda value: (
-    value[:value.index('://') + 3], value[value.index('://') + 3:])
-fman.url = url
+fman.url = url = make_fman_url()
 sys.modules.update({'fman': fman, 'fman.fs': fs, 'fman.url': url})
 
 clipboard = types.ModuleType('fman.clipboard')
@@ -131,26 +126,12 @@ class FakeHost:
 host = FakeHost()
 
 
-class FakeWrapper:
-    def __init__(self, value):
-        self.path = '/' + value.split('://', 1)[1].split('/', 1)[1]
-        self.conn = host
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def upload(self, src_file, on_chunk=None):
-        kwargs = {'callback': on_chunk} if on_chunk is not None else {}
-        host._session.storbinary('STOR ' + self.path, src_file, **kwargs)
-
+class FakeWrapper(BaseFakeWrapper):
     def download(self, dst_file, on_chunk):
         raise AssertionError('download is not used in this test')
 
 
-filesystems.connection_for = lambda url: FakeWrapper(url)
+filesystems.connection_for = lambda url: FakeWrapper(url, host)
 
 
 def expect_notifications(expected):

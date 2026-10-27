@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(HERE, 'ftpclient', 'vendor-sftp'))
 
-import paramiko
+paramiko = importlib.import_module('paramiko')
 logging.getLogger('paramiko').setLevel(logging.CRITICAL)
 
 

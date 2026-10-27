@@ -142,10 +142,13 @@ sys.modules.update({
 listeners = importlib.import_module('ftpclient.listeners')
 
 
-def wait_for_upload():
+def wait_for_upload(watcher):
     loop = QEventLoop()
     QTimer.singleShot(700, loop.quit)
     loop.exec_()
+    # The timer starts a worker thread; wait for its callback and digest update.
+    with watcher._lock:
+        pass
 
 
 app = QCoreApplication.instance() or QCoreApplication([])
@@ -174,13 +177,13 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     )
 
     write_file(tmp_path, b'first save', watcher)
-    wait_for_upload()
+    wait_for_upload(watcher)
     write_file(tmp_path, b'second save', watcher)
-    wait_for_upload()
+    wait_for_upload(watcher)
     assert uploads == [b'first save', b'second save'], uploads
 
     write_file(tmp_path, b'second save', watcher)
-    wait_for_upload()
+    wait_for_upload(watcher)
     assert uploads == [b'first save', b'second save'], uploads
 
     write_file(tmp_path, b'unsaved change', watcher)
