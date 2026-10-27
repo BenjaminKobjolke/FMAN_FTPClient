@@ -1,0 +1,36 @@
+[
+  {
+    "name": "site",
+    "host": "ftp.example",
+    "user": "alice",
+    "password": "ftp-pass",
+    "port": 21,
+    "protocol": "ftp",
+    "folder": "Folder",
+    "remote_dir": "/home"
+  },
+  {
+    "name": "secure",
+    "host": "ftps.example",
+    "user": "bob@example",
+    "password": "ftps-pass",
+    "port": 990,
+    "protocol": "ftps"
+  },
+  {
+    "name": "private",
+    "host": "sftp.example",
+    "user": "carol",
+    "password": "",
+    "port": 22,
+    "protocol": "sftp"
+  },
+  {
+    "name": "invalid",
+    "host": "",
+    "user": "nobody",
+    "password": "bad",
+    "port": 21,
+    "protocol": "ftp"
+  }
+]
