@@ -17,6 +17,11 @@ Features:
   files not yet moved in the source.
 - FTP and FTPS connections are checked automatically against a local test server.
 - A CLI driver lets automatic checks connect, list, upload, download, delete and import accounts against local test servers.
+- A failed upload, download or copy is retried on a new connection, 2 times by
+  default; *Set FTP transfer retries* changes the count. After a copy or move,
+  one prompt lists every file that still failed and retries them all. A folder
+  move whose files only arrive on that retry keeps its (then empty) source
+  folder.
 
 Bugfixes:
 
