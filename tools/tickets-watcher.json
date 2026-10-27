@@ -9,16 +9,22 @@
     "analyze_code_config.example.bat",
     "fix_ruff_issues.bat",
     "fix_ruff_issues_dry_run.bat",
+    "ftp_cli_driver.bat",
     "graphify_update.bat",
     "vendor_import_deps.bat",
     "vendor_sftp_deps.bat",
     "vendor_test_deps.bat"
   ],
+  "cli_driver": {
+    "command": "tools/ftp_cli_driver.bat",
+    "doc": "docs/FTP_CLI_DRIVER.md"
+  },
   "analysis_commands": [
     "python test_connect_outside_pool_lock.py",
     "python test_copy_single_dialog.py",
     "python test_credential_store.py",
     "python test_edit_upload.py",
+    "python test_ftp_cli_driver.py",
     "python test_ftp_connection_error.py",
     "python test_ftp_create_and_refresh.py",
     "python test_ftp_fs.py",
@@ -63,6 +69,9 @@
       "test": "green"
     },
     "python test_edit_upload.py": {
+      "test": "green"
+    },
+    "python test_ftp_cli_driver.py": {
       "test": "green"
     },
     "python test_ftp_connection_error.py": {
