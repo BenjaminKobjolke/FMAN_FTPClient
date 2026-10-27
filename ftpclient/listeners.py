@@ -13,7 +13,7 @@ from fman import (
     DirectoryPaneListener, fs, load_json, save_json, show_alert,
     show_status_message
 )
-from fman.url import splitscheme
+from fman.url import as_url, splitscheme
 
 from .connections import is_ftp
 from .ftp import FtpWrapper
@@ -105,7 +105,7 @@ class FtpListener(DirectoryPaneListener):
 
         tmp_dir = tempfile.mkdtemp()
         tmp_path = os.path.join(tmp_dir, basename(path))
-        tmp_url = 'file://' + tmp_path
+        tmp_url = as_url(tmp_path)
 
         watcher = None
         try:
