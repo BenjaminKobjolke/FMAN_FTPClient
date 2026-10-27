@@ -10,6 +10,7 @@ try:
 except ImportError:
     sys.path.append(os.path.join(os.path.dirname(__file__), 'vendor-import'))
     import ftp_account_readers
+from ftp_account_readers.helpers import unique_name
 
 from . import credentials
 from .bookmarks import bookmark_targets, save_bookmark
@@ -25,6 +26,9 @@ SUPPORTED_SCHEMES = ('ftp', 'ftps', 'sftp')
 NO_SOURCES_MESSAGE = 'No supported FTP account sources are available.'
 PASSWORDS_NOT_STORED_MESSAGE = \
     'Passwords were not stored because Windows Credential Manager is unavailable.'
+ALIAS_FOLDER_SEPARATOR = ' - '
+# Aliases are opened as URLs, so these would split or move the host part.
+ALIAS_UNSAFE_CHARS = str.maketrans({char: '_' for char in '/\\@:?#'})
 
 
 class ImportFtpAccounts(DirectoryPaneCommand):
@@ -127,14 +131,7 @@ class ImportFtpAccounts(DirectoryPaneCommand):
                 duplicates += 1
                 continue
 
-            name = '%s/%s' % (account.folder, account.name) \
-                if account.folder else account.name
-            alias = scheme + '://' + name
-            original_alias = alias
-            suffix = 2
-            while alias in targets:
-                alias = '%s (%d)' % (original_alias, suffix)
-                suffix += 1
+            alias = unique_name(scheme + '://' + _alias_name(account), targets)
 
             save_bookmark(alias, bookmark_url, account.remote_dir or '/')
             targets[alias] = bookmark_url
@@ -151,3 +148,11 @@ class ImportFtpAccounts(DirectoryPaneCommand):
         if sys.platform != 'win32':
             summary += '\n\n' + PASSWORDS_NOT_STORED_MESSAGE
         show_alert(summary)
+
+
+def _alias_name(account) -> str:
+    """Return the account's folder path and name as a URL-netloc-safe alias."""
+    parts = account.folder.split('/') + [account.name] if account.folder \
+        else [account.name]
+    return ALIAS_FOLDER_SEPARATOR.join(
+        part.translate(ALIAS_UNSAFE_CHARS) for part in parts)
