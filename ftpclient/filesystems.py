@@ -11,7 +11,7 @@ from fman.url import \
     basename, dirname as urldirname, splitscheme
 
 from .connections import connection_for
-from .ftp import invalidate_stat_caches
+from .ftp import FtpWrapper, invalidate_stat_caches
 from .ftp_session import DEFAULT_PORTS, FtpConnectionError, ftputil
 from . import transfers
 
@@ -199,6 +199,10 @@ class FtpFs(FileSystem):
 
     def get_parallel_transfers(self, src_url, dst_url):
         return transfers.parallel_transfers(src_url, dst_url)
+
+    def get_connection_count(self, path: str) -> int:
+        # fman++ shows this beside the transfer thread count.
+        return FtpWrapper.count_connections(self.scheme + path)
 
     @staticmethod
     def _is_rename(src_url, dst_url):

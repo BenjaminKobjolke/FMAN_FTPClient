@@ -2,10 +2,9 @@ import collections
 import threading
 import time
 from typing import BinaryIO, Callable
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote
 
-from fman import load_json
-
+from .bookmarks import resolve_bookmark
 from .ftp_session import (
     DEFAULT_PORTS, FtpConnectionError, close_finished_children, close_host,
     format_base_url, is_connection_limit_error,
@@ -43,7 +42,7 @@ class FtpWrapper():
     __NOOP_CHECK_INTERVAL = 5.0  # seconds
 
     def __init__(self, url):
-        u = self._get_bookmark(url)
+        u = resolve_bookmark(url)
         self._url = u.geturl()
         self._scheme = '%s://' % (u.scheme,)
         self._path = u.path or '/'
@@ -151,19 +150,6 @@ class FtpWrapper():
         """Clean up resources left by a completed FTP operation."""
         close_finished_children(host)
 
-    @staticmethod
-    def _get_bookmark(url):
-        u = urlparse(url)
-        url_without_path = u._replace(path='').geturl()
-
-        bookmarks = \
-            load_json('FTP Bookmarks.json', default={})
-        # Replace base URL -if found in bookmarks-, keep the same path
-        if url_without_path in bookmarks:
-            u = urlparse(bookmarks[url_without_path][0])._replace(path=u.path)
-
-        return u
-
     @property
     def hash(self):
         return hash((
@@ -172,8 +158,27 @@ class FtpWrapper():
 
     def _get_base_url(self):
         """Return the base URL (without path) for this connection."""
+        return self._base_url_of(self._url)
+
+    @classmethod
+    def _base_url_of(cls, url: str) -> str:
+        parsed_url = resolve_bookmark(url)
+        port = parsed_url.port or DEFAULT_PORTS.get(parsed_url.scheme, 21)
         return format_base_url(
-            self._scheme, self._user, self._host, self._port)
+            '%s://' % parsed_url.scheme,
+            unquote(parsed_url.username or ''),
+            parsed_url.hostname or '',
+            port)
+
+    @classmethod
+    def count_connections(cls, url: str) -> int:
+        """Return the sessions the pool holds open to url's server."""
+        base_url = cls._base_url_of(url)
+        with cls.__pool_lock:
+            return sum(
+                1 + len(getattr(cls.__conn_pool[conn_hash], '_children', ()))
+                for conn_hash, conn_base_url in cls.__conn_base_urls.items()
+                if conn_base_url == base_url)
 
     @property
     def conn(self):
@@ -263,14 +268,7 @@ class FtpWrapper():
     @classmethod
     def record_visited_path(cls, url):
         """Record the last visited path for a connection's base URL."""
-        u = cls._get_bookmark(url)
-
-        host = u.hostname or ''
-        port = u.port or DEFAULT_PORTS.get(u.scheme, 21)
-        user = unquote(u.username or '')
-        base_url = format_base_url(
-            '%s://' % u.scheme, user, host, port)
-
+        base_url = cls._base_url_of(url)
         with cls.__pool_lock:
             cls.__last_visited_paths[base_url] = url
 
