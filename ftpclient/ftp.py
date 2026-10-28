@@ -7,7 +7,8 @@ from urllib.parse import unquote, urlparse
 from fman import load_json
 
 from .ftp_session import (
-    DEFAULT_PORTS, close_finished_children, close_host, format_base_url,
+    DEFAULT_PORTS, FtpConnectionError, close_finished_children, close_host,
+    format_base_url, is_connection_limit_error,
     ftputil, open_ftp_host,
 )
 
@@ -27,6 +28,7 @@ def invalidate_stat_caches():
 class FtpWrapper():
     __conn_pool = {}
     __conn_timestamps = {}
+    __conn_threads = {}
     __last_noop_check = {}
     __conn_base_urls = {}  # hash → base_url (e.g., "ftp://user@host:21")
     __last_visited_paths = {}  # base_url → last_full_url
@@ -52,7 +54,6 @@ class FtpWrapper():
 
     def __enter__(self):
         with self.__pool_lock:
-            # Clean up stale connections periodically
             self._cleanup_stale_connections()
             # Marked first, so no other thread's cleanup closes the connection
             # while _connect() below checks or opens it.
@@ -80,12 +81,27 @@ class FtpWrapper():
                 with self.__pool_lock:
                     self._remove_connection(self.hash)
 
-        host = self._open_host()
+        try:
+            host = self._open_host()
+        except FtpConnectionError as error:
+            if not is_connection_limit_error(error):
+                raise
+            with self.__pool_lock:
+                stale_hashes = [
+                    conn_hash
+                    for conn_hash, base_url in self.__conn_base_urls.items()
+                    if base_url == self._get_base_url()
+                    and conn_hash not in self.__in_use
+                ]
+                for conn_hash in stale_hashes:
+                    self._remove_connection(conn_hash)
+            host = self._open_host()
         current_time = time.time()
         # Under the lock: other threads iterate these dicts while cleaning up.
         with self.__pool_lock:
             self.__conn_pool[self.hash] = host
             self.__conn_timestamps[self.hash] = current_time
+            self.__conn_threads[self.hash] = threading.get_ident()
             self.__last_noop_check[self.hash] = current_time
             self.__conn_base_urls[self.hash] = self._get_base_url()
 
@@ -206,18 +222,26 @@ class FtpWrapper():
         if conn_hash in cls.__conn_pool:
             close_host(cls.__conn_pool.pop(conn_hash))
             cls.__conn_timestamps.pop(conn_hash, None)
+            cls.__conn_threads.pop(conn_hash, None)
             cls.__last_noop_check.pop(conn_hash, None)
             cls.__conn_base_urls.pop(conn_hash, None)
 
     def _cleanup_stale_connections(self):
-        """Remove connections that have been idle for too long."""
+        """Remove dead-thread connections and connections idle for too long."""
         current_time = time.time()
+        live_threads = {thread.ident for thread in threading.enumerate()}
         # A connection in use is never idle, however old its timestamp.
         stale_hashes = [
             conn_hash
             for conn_hash, timestamp in self.__conn_timestamps.items()
             if conn_hash not in self.__in_use
-            and current_time - timestamp > self.__CONNECTION_TIMEOUT
+            and (
+                (
+                    self.__conn_threads.get(conn_hash) is not None
+                    and self.__conn_threads[conn_hash] not in live_threads
+                )
+                or current_time - timestamp > self.__CONNECTION_TIMEOUT
+            )
         ]
 
         for conn_hash in stale_hashes:
@@ -231,6 +255,7 @@ class FtpWrapper():
                 close_host(cls.__conn_pool[conn_hash])
             cls.__conn_pool.clear()
             cls.__conn_timestamps.clear()
+            cls.__conn_threads.clear()
             cls.__last_noop_check.clear()
             cls.__conn_base_urls.clear()
             cls.__last_visited_paths.clear()
@@ -253,7 +278,6 @@ class FtpWrapper():
     def get_open_connections(cls):
         """Return list of (base_url, last_visited_url) for active connections."""
         with cls.__pool_lock:
-            # Get all unique base URLs from active connections
             active_base_urls = set(cls.__conn_base_urls.values())
             result = []
             for base_url in active_base_urls:
@@ -265,13 +289,11 @@ class FtpWrapper():
     def close_connection_by_url(cls, base_url):
         """Close a specific connection by its base URL."""
         with cls.__pool_lock:
-            # Find all hashes that match this base_url
             hashes_to_remove = [
                 h for h, url in cls.__conn_base_urls.items()
                 if url == base_url
             ]
             for conn_hash in hashes_to_remove:
                 cls._remove_connection(conn_hash)
-            # Also clear the last visited path for this connection
             if base_url in cls.__last_visited_paths:
                 del cls.__last_visited_paths[base_url]

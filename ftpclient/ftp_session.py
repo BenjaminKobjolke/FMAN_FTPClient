@@ -16,6 +16,19 @@ class FtpConnectionError(OSError):
     """Raised when the FTP server cannot be reached or refuses the login."""
 
 
+def is_connection_limit_error(error):
+    cause = error.__cause__
+    while cause is not None:
+        if (
+            isinstance(cause, ftputil.error.PermanentError)
+            and str(cause).startswith('530')
+            and 'connection' in str(cause).lower()
+        ):
+            return True
+        cause = cause.__cause__
+    return False
+
+
 # A stuck server must not block the worker forever; this also bounds transfers.
 SOCKET_TIMEOUT_SECS = 30
 DEFAULT_PORTS: dict[str, int] = {'ftp': 21, 'ftps': 21, 'sftp': 22}
