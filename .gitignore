@@ -122,4 +122,6 @@ graphify-out/
 coding-rules.json
 code_analysis_results/
 /tools/analyze_code_config.bat
+/tools/ftp_ui_driver_config.bat
+test-vendor/
 .reasonix/
