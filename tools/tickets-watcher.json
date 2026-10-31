@@ -36,10 +36,25 @@
     "python test_root_path_no_connect.py",
     "python test_sftp_fs.py",
     "python test_stat_cache_generation.py",
-    "tools\\analyze_changed_and_new_files.bat",
-    "tools\\analyze_code.bat"
+    "tools\\analyze_changed_and_new_files.bat"
   ],
   "analysis_command_kinds": {
+    "python test_connect_outside_pool_lock.py": "test",
+    "python test_copy_single_dialog.py": "test",
+    "python test_credential_store.py": "test",
+    "python test_edit_upload.py": "test",
+    "python test_ftp_cli_driver.py": "test",
+    "python test_ftp_connection_error.py": "test",
+    "python test_ftp_create_and_refresh.py": "test",
+    "python test_ftp_fs.py": "test",
+    "python test_ftp_stored_password.py": "test",
+    "python test_import_accounts.py": "test",
+    "python test_in_use_connection_not_reaped.py": "test",
+    "python test_move_to_trash.py": "test",
+    "python test_pooled_transfers.py": "test",
+    "python test_root_path_no_connect.py": "test",
+    "python test_sftp_fs.py": "test",
+    "python test_stat_cache_generation.py": "test",
     "tools\\analyze_changed_and_new_files.bat": "code_quality"
   },
   "analysis_commands_seen": {
@@ -108,9 +123,6 @@
       "test": "green"
     },
     "tools\\analyze_changed_and_new_files.bat": {
-      "code_quality": "green"
-    },
-    "tools\\analyze_code.bat": {
       "code_quality": "green"
     }
   },
