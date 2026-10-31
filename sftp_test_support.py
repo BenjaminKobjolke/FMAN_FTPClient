@@ -9,6 +9,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 import types
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.join(HERE, 'ftpclient', 'vendor-sftp'))
@@ -135,9 +136,12 @@ class LocalSftpHandle(paramiko.SFTPHandle):
 
 
 class LocalSftpInterface(paramiko.SFTPServerInterface):
-    def __init__(self, server, root: str | None = None) -> None:
+    def __init__(
+        self, server, root: str | None = None, delay_seconds: float = 0.0
+    ) -> None:
         super().__init__(server)
         self._root = root or temp_root
+        self.delay_seconds = delay_seconds
 
     def _local(self, path):
         path = posixpath.normpath('/' + path.lstrip('/'))
@@ -163,6 +167,9 @@ class LocalSftpInterface(paramiko.SFTPServerInterface):
         return paramiko.SFTPAttributes.from_stat(os.lstat(self._local(path)))
 
     def open(self, path, flags, attr):
+        if self.delay_seconds > 0:
+            # Keep fman's progress window visible long enough to inspect it.
+            time.sleep(self.delay_seconds)
         local_path = self._local(path)
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         if flags & os.O_CREAT and not os.path.exists(local_path):
@@ -170,14 +177,20 @@ class LocalSftpInterface(paramiko.SFTPServerInterface):
         return LocalSftpHandle(flags, local_path)
 
     def remove(self, path):
+        if self.delay_seconds > 0:
+            time.sleep(self.delay_seconds)
         os.remove(self._local(path))
         return paramiko.SFTP_OK
 
     def mkdir(self, path, attr):
+        if self.delay_seconds > 0:
+            time.sleep(self.delay_seconds)
         os.mkdir(self._local(path))
         return paramiko.SFTP_OK
 
     def rmdir(self, path):
+        if self.delay_seconds > 0:
+            time.sleep(self.delay_seconds)
         os.rmdir(self._local(path))
         return paramiko.SFTP_OK
 
@@ -203,8 +216,13 @@ class PasswordServer(paramiko.ServerInterface):
 
 
 class SftpTestServer:
-    def __init__(self, root: str | None = None) -> None:
+    def __init__(
+        self, root: str | None = None, delay_seconds: float = 0.0
+    ) -> None:
+        if delay_seconds < 0:
+            raise ValueError('delay_seconds must be non-negative')
         self.root = root or temp_root
+        self.delay_seconds = delay_seconds
         self.host_key = paramiko.RSAKey.generate(2048)
         self.listener = socket.socket()
         self.listener.bind(('127.0.0.1', 0))
@@ -227,7 +245,8 @@ class SftpTestServer:
         transport = paramiko.Transport(client)
         transport.add_server_key(self.host_key)
         transport.set_subsystem_handler(
-            'sftp', paramiko.SFTPServer, LocalSftpInterface, self.root)
+            'sftp', paramiko.SFTPServer, LocalSftpInterface, self.root,
+            self.delay_seconds)
         try:
             transport.start_server(server=PasswordServer())
             while transport.is_active():

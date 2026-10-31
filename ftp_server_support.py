@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TEST_VENDOR = os.path.join(HERE, 'test-vendor')
@@ -56,13 +57,19 @@ def _write_certificate(directory: str) -> str:
 class FtpTestServer:
     """Run a password-protected FTP server on a local ephemeral port."""
 
-    def __init__(self, tls: bool = False, root: str | None = None) -> None:
+    def __init__(
+        self, tls: bool = False, root: str | None = None,
+        delay_seconds: float = 0.0,
+    ) -> None:
+        if delay_seconds < 0:
+            raise ValueError('delay_seconds must be non-negative')
         from pyftpdlib.authorizers import DummyAuthorizer
         from pyftpdlib.handlers import FTPHandler, TLS_FTPHandler
-        from pyftpdlib.servers import FTPServer
+        from pyftpdlib.servers import FTPServer, ThreadedFTPServer
 
         self._owns_root = root is None
         self.root = root or tempfile.mkdtemp(prefix='ftpclient-ftp-')
+        self.delay_seconds = delay_seconds
         self.cert_root = tempfile.mkdtemp(prefix='ftpclient-ftps-') if tls else None
         authorizer = DummyAuthorizer()
         authorizer.add_user(
@@ -79,10 +86,25 @@ class FtpTestServer:
         else:
             handler_type = FTPHandler
             attributes = {}
+        server_type = FTPServer
+        if delay_seconds > 0:
+            def delayed(operation):
+                def run(handler, *args, **kwargs):
+                    # Keep fman's progress window visible long enough to inspect it.
+                    time.sleep(delay_seconds)
+                    return operation(handler, *args, **kwargs)
+                return run
+
+            attributes.update({
+                name: delayed(getattr(handler_type, name))
+                for name in ('ftp_RETR', 'ftp_STOR', 'ftp_DELE',
+                             'ftp_RMD', 'ftp_MKD')
+            })
+            server_type = ThreadedFTPServer
         handler = type('LocalFtpHandler', (handler_type,), attributes)
         handler.authorizer = authorizer
 
-        self.server = FTPServer(('127.0.0.1', 0), handler)
+        self.server = server_type(('127.0.0.1', 0), handler)
         self.port = self.server.socket.getsockname()[1]
         self.running = True
         self.thread = threading.Thread(target=self._serve, daemon=True)
