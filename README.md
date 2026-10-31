@@ -72,6 +72,8 @@ The offline checks are root-level scripts run with `python test_<name>.py`. `tes
 
 `tools\ftp_cli_driver.bat` provides isolated connect, list, upload, download, delete and sample account-import commands for automatic checks; see [the CLI driver guide](docs/FTP_CLI_DRIVER.md).
 
+`tools\ftp_ui_driver.bat` provides an isolated desktop fman session for inspecting FTP and SFTP panes and transfer windows; see [the FTP desktop UI driver guide](docs/FTP_UI_DRIVER.md).
+
 ## TODO
 - Allow setting file/folder permissions, if applicable.
 

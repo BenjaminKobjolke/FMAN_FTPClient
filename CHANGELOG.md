@@ -18,6 +18,7 @@ Features:
   files not yet moved in the source.
 - FTP and FTPS connections are checked automatically against a local test server.
 - A CLI driver lets automatic checks connect, list, upload, download, delete and import accounts against local test servers.
+- A desktop UI driver starts an isolated fman profile with local FTP and SFTP fixtures for inspecting panes and transfer windows.
 - A failed upload, download or copy is retried on a new connection, 2 times by
   default; *Set FTP transfer retries* changes the count. After a copy or move,
   one prompt lists every file that still failed and retries them all. A folder
