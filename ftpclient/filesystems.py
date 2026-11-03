@@ -135,11 +135,18 @@ class FtpFs(FileSystem):
             self._delete_entry(entry_path, is_dir, is_top)
 
     def prepare_delete(self, path: str) -> Iterator[Task]:
-        # Yield one task per entry so fman can show progress and cancel between entries.
+        # Put folders last so parallel file deletes finish before folders are removed.
+        folder_tasks = []
         for entry_path, is_dir, is_top in self._delete_entries(path, is_top=True):
-            yield Task('Deleting ' + entry_path.rsplit('/', 1)[-1], size=1,
-                       fn=self._delete_entry,
-                       args=(entry_path, is_dir, is_top))
+            task = Task('Deleting ' + entry_path.rsplit('/', 1)[-1], size=1,
+                        fn=self._delete_entry,
+                        args=(entry_path, is_dir, is_top))
+            if is_dir:
+                task.waits_for_earlier_tasks = True
+                folder_tasks.append(task)
+            else:
+                yield task
+        yield from folder_tasks
 
     def _delete_entries(self, path, is_top=False):
         is_dir = self.is_dir(path)
@@ -200,6 +207,10 @@ class FtpFs(FileSystem):
 
     def get_parallel_transfers(self, src_url, dst_url):
         return transfers.parallel_transfers(src_url, dst_url)
+
+    def get_parallel_deletes(self, path):
+        # Each worker holds a connection.
+        return transfers.PARALLEL_TRANSFERS
 
     def get_connection_count(self, path: str) -> int:
         # fman++ shows this beside the transfer thread count.

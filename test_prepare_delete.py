@@ -30,10 +30,10 @@ fman_fs.notify_file_changed = changed_notifications.append
 
 
 tree = {
-    'host/d': ['a.txt', 'sub'],
-    'host/d/sub': ['b.txt'],
+    'top': ['a.txt', 'sub', 'c.txt'],
+    'top/sub': ['b.txt'],
 }
-directories = {'host/d', 'host/d/sub'}
+directories = {'top', 'top/sub'}
 
 
 class FakeConnection:
@@ -65,37 +65,51 @@ def make_fs():
 
 
 fs_obj, calls = make_fs()
-tasks = list(fs_obj.prepare_delete('host/d'))
+assert fs_obj.get_parallel_deletes('host/x') == \
+    filesystems.transfers.PARALLEL_TRANSFERS
+
+tasks = list(fs_obj.prepare_delete('top'))
 assert [task.args[0] for task in tasks] == [
-    'host/d/a.txt', 'host/d/sub/b.txt', 'host/d/sub', 'host/d']
-assert [task.get_size() for task in tasks] == [1, 1, 1, 1]
+    'top/a.txt', 'top/sub/b.txt', 'top/c.txt', 'top/sub', 'top']
+assert [task.get_size() for task in tasks] == [1, 1, 1, 1, 1]
 assert [task.title for task in tasks] == [
-    'Deleting a.txt', 'Deleting b.txt', 'Deleting sub', 'Deleting d']
+    'Deleting a.txt', 'Deleting b.txt', 'Deleting c.txt',
+    'Deleting sub', 'Deleting top']
+assert [getattr(task, 'waits_for_earlier_tasks', False) for task in tasks] == [
+    False, False, False, True, True]
+assert [task.args[2] for task in tasks] == [False, False, False, False, True]
 assert calls == []
 
 for task in tasks:
     task()
 
 assert calls == [
-    ('remove', 'host/d/a.txt'),
-    ('remove', 'host/d/sub/b.txt'),
-    ('rmdir', 'host/d/sub'),
-    ('rmdir', 'host/d'),
+    ('remove', 'top/a.txt'),
+    ('remove', 'top/sub/b.txt'),
+    ('remove', 'top/c.txt'),
+    ('rmdir', 'top/sub'),
+    ('rmdir', 'top'),
 ], calls
-assert removed_notifications == ['ftp://host/d'], removed_notifications
+assert removed_notifications == ['ftp://top'], removed_notifications
 assert changed_notifications == [], changed_notifications
 
 trash_fs, _ = make_fs()
-trash_tasks = list(trash_fs.prepare_trash('host/d'))
+trash_tasks = list(trash_fs.prepare_trash('top'))
 assert [(task.title, task.args, task.get_size()) for task in trash_tasks] == [
     (task.title, task.args, task.get_size()) for task in tasks]
 
 removed_notifications.clear()
 changed_notifications.clear()
 delete_fs, delete_calls = make_fs()
-delete_fs.delete('host/d')
-assert delete_calls == calls, delete_calls
-assert removed_notifications == ['ftp://host/d'], removed_notifications
+delete_fs.delete('top')
+assert delete_calls == [
+    ('remove', 'top/a.txt'),
+    ('remove', 'top/sub/b.txt'),
+    ('rmdir', 'top/sub'),
+    ('remove', 'top/c.txt'),
+    ('rmdir', 'top'),
+], delete_calls
+assert removed_notifications == ['ftp://top'], removed_notifications
 assert changed_notifications == [], changed_notifications
 
 print(
