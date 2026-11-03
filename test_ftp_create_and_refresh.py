@@ -163,8 +163,7 @@ expect_notifications([
 
 ftp_fs.delete('example.com/dir/old.txt')
 expect_notifications([
-    ('removed', 'ftp://example.com/dir/old.txt'),
-    ('changed', 'ftp://example.com/dir')])
+    ('removed', 'ftp://example.com/dir/old.txt')])
 ftp_fs.mkdir('example.com/dir/new-folder')
 expect_notifications([
     ('added', 'ftp://example.com/dir/new-folder'),

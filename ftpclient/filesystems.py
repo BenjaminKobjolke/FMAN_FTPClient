@@ -155,9 +155,10 @@ class FtpFs(FileSystem):
             else:
                 ftp.conn.remove(ftp.path)
         if is_top:
-            # Only the selected item needs to notify and refresh its parent.
+            # Only the selected item notifies its parent.
+            # notify_file_removed removes the row; a reload would LIST the
+            # whole folder once per deleted item.
             self._notify_removed(path)
-            self._reload_panes(path)
 
     def move_to_trash(self, path):
         # FTP has no trash, so deleting is the closest thing.

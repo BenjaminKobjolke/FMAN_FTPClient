@@ -83,7 +83,7 @@ assert calls == [
     ('rmdir', 'host/d'),
 ], calls
 assert removed_notifications == ['ftp://host/d'], removed_notifications
-assert changed_notifications == ['ftp://host'], changed_notifications
+assert changed_notifications == [], changed_notifications
 
 trash_fs, _ = make_fs()
 trash_tasks = list(trash_fs.prepare_trash('host/d'))
@@ -96,6 +96,9 @@ delete_fs, delete_calls = make_fs()
 delete_fs.delete('host/d')
 assert delete_calls == calls, delete_calls
 assert removed_notifications == ['ftp://host/d'], removed_notifications
-assert changed_notifications == ['ftp://host'], changed_notifications
+assert changed_notifications == [], changed_notifications
 
-print('ok: delete tasks run child-first with one top-level refresh')
+print(
+    'ok: delete tasks run child-first with one top-level removal '
+    'and no folder reload'
+)
