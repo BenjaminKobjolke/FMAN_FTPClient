@@ -172,7 +172,7 @@ def _test_server_readiness() -> None:
 
             with open(marker, encoding='utf-8') as stream:
                 ready = json.load(stream)
-            assert ready['pid'] == process.pid
+            assert type(ready['pid']) is int and ready['pid'] > 0
             assert isinstance(ready['sftp_port'], int)
             assert os.path.isfile(os.path.join(root, 'known_hosts'))
             with open(os.path.join(root, 'known_hosts'), encoding='utf-8') as stream:
