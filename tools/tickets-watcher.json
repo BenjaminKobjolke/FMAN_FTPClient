@@ -99,7 +99,7 @@
       "test": "green"
     },
     "python test_ftp_ui_driver.py": {
-      "test": "green"
+      "test": "failed"
     },
     "python test_ftp_connection_error.py": {
       "test": "green"
