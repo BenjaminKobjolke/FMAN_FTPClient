@@ -2,6 +2,7 @@
 
 Features:
 
+- Copies and moves between FTP, FTPS or SFTP and archives, phones or other plugins stream through fman++'s `FileSystem.open()` fallback; needs an fman++ build with `FileSystem.open()` (#14883). Failed or cancelled writes remove partial remote files.
 - The upload progress window for a saved edited file opens in front of the editing alert; needs an fman++ build with tool window support.
 - Import FTP, FTPS and SFTP accounts from WinSCP, FileZilla and NppFTP; FTP connections can use saved passwords from Windows Credential Manager.
 - SFTP connections can browse and manage remote files, copy files to and from FTP or local folders, and edit remote files with upload on save. SSH keys and agents work without a password; prompted passwords are saved in Windows Credential Manager, and server keys are checked using `~/.ssh/known_hosts`.

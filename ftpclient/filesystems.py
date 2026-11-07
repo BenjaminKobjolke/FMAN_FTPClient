@@ -14,6 +14,7 @@ from .connections import connection_for
 from .ftp import FtpWrapper, invalidate_stat_caches
 from .ftp_session import DEFAULT_PORTS, FtpConnectionError, ftputil
 from . import transfers
+from . import streams
 
 
 class FtpFs(FileSystem):
@@ -57,6 +58,7 @@ class FtpFs(FileSystem):
 
     def _notify_removed(self, path):
         invalidate_stat_caches()
+        self.cache.clear(path)
         fs.notify_file_removed(self.scheme + path)
 
     @cached
@@ -193,6 +195,11 @@ class FtpFs(FileSystem):
             ftp.upload(io.BytesIO())
         self._notify_written(path)
         self._reload_panes(path)
+
+    def open(self, path: str, mode: str) -> streams.RemoteStream:
+        """Let fman++ stream copies the plugin cannot perform natively."""
+        return streams.open_remote(
+            self.scheme + path, mode, self._notify_written, self._notify_removed)
 
     def samefile(self, path1, path2):
         return path1 == path2

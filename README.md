@@ -55,6 +55,7 @@ This plugin includes several optimizations for better remote file access perform
 - **Optional Fast Mode**: Toggle detailed stats on/off for faster directory listings when metadata isn't needed.
 - **Streaming Transfers**: Copies and moves start while the folder tree is still being walked. The walk uses its own connection.
 - **Parallel Transfers**: Downloads and uploads, copies and moves alike, run 3 files at once (`PARALLEL_TRANSFERS` in `ftpclient/transfers.py`), each on its own connection. Add or remove workers with `+` / `−` in the progress dialog; a removed worker finishes its file first. With fman++ support from #13524, the dialog also shows `Connections: N` next to the thread count. N includes every plugin connection to that server: one per worker, one for walking the folders, one per open pane, and child sessions used by server-to-server copies. A move deletes each source file right after its own copy, and a source folder once it is empty. Server-to-server transfers stay sequential.
+- **Streaming copies (fman++)**: copies and moves between an FTP/FTPS/SFTP server and archives (zip, 7z, tar), phones or other plugins work through fman++'s stream fallback; needs an fman++ build with `FileSystem.open()` (#14883). A failed or cancelled write removes the partial remote file.
 - The FTP transfer window can be minimized to the status bar with its `–` button.
 
 ## Saved passwords and host keys
