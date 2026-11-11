@@ -10,6 +10,10 @@ from .ftp_session import (
     format_base_url, is_connection_limit_error,
     ftputil, open_ftp_host,
 )
+from .ftp_connection_pool import (
+    _ConnectionPools, _adopt_dead_thread_connection,
+    _cleanup_stale_connections,
+)
 
 
 # Bumped whenever this plugin changes something on a server. The connection
@@ -40,6 +44,9 @@ class FtpWrapper():
     __CONNECTION_TIMEOUT = 120
     # NOOP validation cache: only validate connection if last check was this long ago
     __NOOP_CHECK_INTERVAL = 5.0  # seconds
+    __connection_pools = _ConnectionPools(
+        __conn_pool, __conn_timestamps, __conn_threads, __last_noop_check,
+        __conn_base_urls, __in_use, __CONNECTION_TIMEOUT)
 
     def __init__(self, url):
         u = resolve_bookmark(url)
@@ -53,6 +60,9 @@ class FtpWrapper():
 
     def __enter__(self):
         with self.__pool_lock:
+            # fman runs most lookups on short-lived threads, and each would log in.
+            _adopt_dead_thread_connection(
+                self.__connection_pools, self.hash, self._hash_for)
             self._cleanup_stale_connections()
             # Marked first, so no other thread's cleanup closes the connection
             # while _connect() below checks or opens it.
@@ -152,8 +162,11 @@ class FtpWrapper():
 
     @property
     def hash(self):
+        return self._hash_for(threading.get_ident())
+
+    def _hash_for(self, thread_ident):
         return hash((
-            threading.get_ident(), self._scheme, self._host, self._port, self._user,
+            thread_ident, self._scheme, self._host, self._port, self._user,
             self._passwd))
 
     def _get_base_url(self):
@@ -233,24 +246,8 @@ class FtpWrapper():
 
     def _cleanup_stale_connections(self):
         """Remove dead-thread connections and connections idle for too long."""
-        current_time = time.time()
-        live_threads = {thread.ident for thread in threading.enumerate()}
-        # A connection in use is never idle, however old its timestamp.
-        stale_hashes = [
-            conn_hash
-            for conn_hash, timestamp in self.__conn_timestamps.items()
-            if conn_hash not in self.__in_use
-            and (
-                (
-                    self.__conn_threads.get(conn_hash) is not None
-                    and self.__conn_threads[conn_hash] not in live_threads
-                )
-                or current_time - timestamp > self.__CONNECTION_TIMEOUT
-            )
-        ]
-
-        for conn_hash in stale_hashes:
-            self._remove_connection(conn_hash)
+        _cleanup_stale_connections(
+            self.__connection_pools, self._remove_connection)
 
     @classmethod
     def close_all_connections(cls):

@@ -28,6 +28,7 @@ Features:
 
 Bugfixes:
 
+- Reuse idle FTP connections left by finished threads when the next thread connects with the same server and credentials.
 - Deleting on FTP now asks to delete permanently instead of offering the Recycle Bin.
 - Move to trash on FTP now deletes permanently instead of failing with "FTP has no Trash support".
 - Creating a new file on FTP no longer fails with `PermissionError`, and the
