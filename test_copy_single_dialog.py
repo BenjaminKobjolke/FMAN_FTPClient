@@ -8,10 +8,10 @@ Run: python test_copy_single_dialog.py
 """
 import importlib
 import os
-import sys
 import tempfile
 import threading
 import types
+from test_fman_setup import install_fman_modules
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIZE = 5000
@@ -85,21 +85,7 @@ fs.is_dir = lambda url: False
 fs.exists = lambda url: True
 fs.delete = deleted.append
 fs.notify_file_added = lambda url: None
-fman.fs = fs
-
-url = types.ModuleType('fman.url')
-url.join = lambda *parts: '/'.join(parts)
-url.basename = lambda u: u.rsplit('/', 1)[-1]
-url.dirname = lambda u: u.rsplit('/', 1)[0]
-url.splitscheme = lambda u: (u[:u.index('://') + 3], u[u.index('://') + 3:])
-fman.url = url
-
-sys.modules.update({'fman': fman, 'fman.fs': fs, 'fman.url': url})
-
-# A bare package, so the plugin's __init__ (commands, listeners) is not run.
-package = types.ModuleType('ftpclient')
-package.__path__ = [os.path.join(HERE, 'ftpclient')]
-sys.modules['ftpclient'] = package
+url = install_fman_modules(fman, fs, HERE)
 filesystems = importlib.import_module('ftpclient.filesystems')
 transfers = importlib.import_module('ftpclient.transfers')
 
@@ -153,12 +139,11 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     ftp_fs = filesystems.FtpFs()
 
     tasks = list(ftp_fs.prepare_copy(src, dst))
-    assert [t.get_title() for t in tasks] == \
-        ['Uploading a.bin', 'Checking failed transfers'], tasks
+    assert [t.get_title() for t in tasks] == ['Uploading a.bin'], tasks
     assert tasks[0].get_size() == SIZE, 'size must be known before it runs'
     tasks[0]()
     assert submitted == [], 'a subtask must not open a dialog of its own'
-    assert tasks[0]._unit.progress == SIZE
+    assert tasks[0].progress == SIZE
     assert transfer_events[0] == ('mkdir', 'ftp://example.com/dir'), \
         'the destination parent is created before the transfer'
     assert transfer_events[1] == ('transfer', 'ftp://example.com/dir/a.bin')
@@ -166,7 +151,7 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     ftp_fs.copy(src, dst)
     assert submitted == ['Copying a.bin'], 'a direct copy shows one dialog'
 
-    move, _check = ftp_fs.prepare_move(src, dst)
+    move = list(ftp_fs.prepare_move(src, dst))[0]
     assert move.get_size() == SIZE
     FakeConn.fail = True
     try:
@@ -192,8 +177,7 @@ fs.is_dir = lambda u: u == folder
 fs.iterdir = lambda u: ['x.bin'] if u == folder else []
 tasks = list(ftp_fs.prepare_move(folder, 'file:///tmp/dir'))
 assert [t.get_title() for t in tasks] == \
-    ['Creating dir', 'Moving x.bin', 'Deleting dir',
-     'Checking failed transfers'], tasks
+    ['Creating dir', 'Moving x.bin', 'Deleting dir'], tasks
 assert not getattr(tasks[0], 'blocks_later_tasks', False), \
     'creating a folder does not block unrelated files'
 assert tasks[2].waits_for_earlier_tasks, 'the folder waits for its files'
