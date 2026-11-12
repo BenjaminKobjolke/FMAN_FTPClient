@@ -18,7 +18,7 @@ A [fman++](https://fman.io/) FTP and SFTP client. FTP support uses the powerful 
 - **Close individual FTP connection** (`close_individual_ftp_connection`): Show list of active FTP connections and close the selected one.
 - **Close FTP connections** (`close_ftp_connections`): Manually close all active FTP connections and navigate to home directory.
 - **Toggle FTP detailed stats** (`toggle_ftp_detailed_stats`): Toggle between showing full file details (size, date, permissions) or just filenames for faster directory listings.
-- **Set FTP transfer retries** (`set_ftp_transfer_retries`): How often a failed upload, download or copy is retried on a new connection before it counts as failed (0-10, default 2). Saved as `transfer_retries` in `FTP Settings.json`.
+- **Set FTP transfer retries** (`set_ftp_transfer_retries`): How often the plugin silently retries each failed upload, download or copy on a new connection before it counts as failed (0-10, default 2). fman then shows one retry prompt at the end of the copy or move. Saved as `transfer_retries` in `FTP Settings.json`.
 - **Copy FTP web URL** (`copy_ftp_web_url`): Copy the web URL for the current FTP path or selected file to clipboard.
 - **Change FTP web URL** (`change_ftp_web_url`): Change the base web URL associated with the current FTP bookmark.
 - **Open FTP web URL** (`open_ftp_web_url`): Open the web URL for the current FTP path or selected file in the default browser.

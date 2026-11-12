@@ -9,10 +9,7 @@ from fman.url import basename, dirname, join as urljoin, splitscheme
 
 from .connections import connection_for, is_file, is_ftp
 from .ftp_session import ftputil
-from .transfer_retry import (
-    TRANSIENT_ERRORS, TrackedUnit, current_batch, transfer_retries,
-    with_retry_check,
-)
+from .transfer_retry import TRANSIENT_ERRORS, transfer_retries
 
 # Each worker holds a connection, and some servers limit them per client IP.
 PARALLEL_TRANSFERS = 3
@@ -143,23 +140,21 @@ def parallel_transfers(src_url, dst_url) -> int:
 
 def prepare_copy(src_url, dst_url, on_written: Callable[[str], None]):
     check_supported(src_url, dst_url)
-    batch = current_batch()
     folders = _Folders()
-    return with_retry_check(
-        batch, _prepare_copy(src_url, dst_url, on_written, batch, folders))
+    return _prepare_copy(src_url, dst_url, on_written, folders)
 
 
-def _prepare_copy(src_url, dst_url, on_written, batch, folders):
+def _prepare_copy(src_url, dst_url, on_written, folders):
     if not fs.is_dir(src_url):
-        yield TrackedUnit(batch, (src_url, dst_url), lambda: prepare_file_copy(
+        yield prepare_file_copy(
             src_url, dst_url, on_written,
-            make_parent=lambda: folders.ensure(dirname(dst_url))))
+            make_parent=lambda: folders.ensure(dirname(dst_url)))
         return
     yield _prepare_mkdir(dst_url, folders)
     for fname in fs.iterdir(src_url):
         yield from _prepare_copy(
             urljoin(src_url, fname), urljoin(dst_url, fname), on_written,
-            batch, folders)
+            folders)
 
 
 def _prepare_mkdir(dst_url, folders):
@@ -216,10 +211,8 @@ def prepare_file_copy(src_url, dst_url, on_written, make_parent=lambda: None):
 
 def prepare_move(src_url, dst_url, on_written: Callable[[str], None]):
     check_supported(src_url, dst_url)
-    batch = current_batch()
     folders = _Folders()
-    return with_retry_check(
-        batch, _prepare_move(src_url, dst_url, on_written, batch, folders))
+    return _prepare_move(src_url, dst_url, on_written, folders)
 
 
 def _prepare_file_move(src_url, dst_url, on_written, folders):
@@ -232,17 +225,16 @@ def _prepare_file_move(src_url, dst_url, on_written, folders):
         Task('Deleting ' + name, fn=_delete_source, args=(src_url,))])
 
 
-def _prepare_move(src_url, dst_url, on_written, batch, folders):
+def _prepare_move(src_url, dst_url, on_written, folders):
     name = basename(src_url)
     if not fs.is_dir(src_url):
-        yield TrackedUnit(batch, (src_url, dst_url), lambda: _prepare_file_move(
-            src_url, dst_url, on_written, folders))
+        yield _prepare_file_move(src_url, dst_url, on_written, folders)
         return
     yield _prepare_mkdir(dst_url, folders)
     for fname in fs.iterdir(src_url):
         yield from _prepare_move(
             urljoin(src_url, fname), urljoin(dst_url, fname), on_written,
-            batch, folders)
+            folders)
     delete = Task(
         'Deleting ' + name, fn=_delete_if_empty, args=(src_url,))
     # The folder is only empty once the moves out of it are done.
