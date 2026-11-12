@@ -2,6 +2,7 @@
 
 Features:
 
+- Run `.fppq` transfer queue files from the command palette, with FTP/SFTP connection selection, relative path handling and an option to delete the queue after every transfer succeeds.
 - Copies and moves between FTP, FTPS or SFTP and archives, phones or other plugins stream through fman++'s `FileSystem.open()` fallback; needs an fman++ build with `FileSystem.open()` (#14883). Failed or cancelled writes remove partial remote files.
 - The upload progress window for a saved edited file opens in front of the editing alert; needs an fman++ build with tool window support.
 - Import FTP, FTPS and SFTP accounts from WinSCP, FileZilla and NppFTP; FTP connections can use saved passwords from Windows Credential Manager.

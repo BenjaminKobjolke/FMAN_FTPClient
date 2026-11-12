@@ -1,43 +1,29 @@
+import os
 from os.path import expanduser
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from fman import \
-    DirectoryPaneCommand, NO, QuicksearchItem, YES, fs, load_json, save_json, \
+    CANCEL, DirectoryPaneCommand, NO, Task, YES, fs, \
+    load_json, save_json, submit_task, \
     show_alert, show_prompt, show_quicksearch
 from fman.url import basename, join
 
-from .bookmarks import bookmark_targets, save_bookmark
-from .connections import connection_for, is_ftp
+from .connections import is_ftp
 from .ftp import FtpWrapper
-from .ftp_session import FtpConnectionError
+from .transfer_queue import QueueError, has_relative_remote, parse_queue, resolve
 from .transfer_retry import (
     MAX_TRANSFER_RETRIES, parse_transfer_retries, transfer_retries,
 )
+from .transfers import TransferSequence
+from .command_utils import goto_ftp, matching_items
+from .bookmark_commands import \
+    AddFtpBookmark as AddFtpBookmark, \
+    OpenFtpBookmark as OpenFtpBookmark, \
+    OpenFtpHistory as OpenFtpHistory, \
+    RemoveFtpBookmark as RemoveFtpBookmark
 
-
-def _matching_items(names, query):
-    """Yield matches with their case-insensitive occurrence highlighted."""
-    for name in names:
-        try:
-            index = name.lower().index(query)
-        except ValueError:
-            continue
-        yield QuicksearchItem(
-            name, highlight=range(index, index + len(query)))
-
-
-def _goto_ftp(pane, url):
-    """Navigate to `url`, showing a readable alert if the server refuses us."""
-    if not is_ftp(url):
-        pane.set_path(url)
-        return
-    try:
-        with connection_for(url):
-            pass
-    except FtpConnectionError as e:
-        show_alert(str(e))
-        return
-    pane.set_path(url)
+_matching_items = matching_items
+_goto_ftp = goto_ftp
 
 
 class CreateAndEditFtpFile(DirectoryPaneCommand):
@@ -69,114 +55,8 @@ class OpenFtpLocation(DirectoryPaneCommand):
             default='ftp[s]://[user[:password]@]ftp.host[:port][/path] '
                     'or sftp://[user[:password]@]sftp.host[:port][/path]')
         if text and ok:
-            _goto_ftp(self.pane, text)
+            goto_ftp(self.pane, text)
             return
-
-
-class OpenFtpBookmark(DirectoryPaneCommand):
-    def __call__(self):
-        result = show_quicksearch(self._get_items)
-        if result and result[1]:
-            # Fetch bookmarks to connect to the default path
-            bookmarks = \
-                load_json('FTP Bookmarks.json', default={})
-            bookmark = bookmarks[result[1]]
-            url = urlparse(result[1])._replace(path=bookmark[1]).geturl()
-            _goto_ftp(self.pane, url)
-
-    def _get_items(self, query):
-        bookmarks = \
-            load_json('FTP Bookmarks.json', default={})
-
-        yield from _matching_items(sorted(bookmarks.keys()), query)
-
-
-class AddFtpBookmark(DirectoryPaneCommand):
-    def __call__(self):
-        url = self.pane.get_path()
-        if not is_ftp(url):
-            url = (
-                'ftp[s]://user[:password]@ftp.host[:port]/some_dir '
-                'or sftp://user@host[:port]/some_dir')
-
-        url, ok = show_prompt(
-            'New FTP/SFTP bookmark, please enter the URL', default=url)
-
-        if not (url and ok):
-            return
-        if not is_ftp(url):
-            show_alert(
-                'URL must include any of the following schemes: '
-                'ftp://, ftps://, sftp://')
-            return
-
-        # XXX URL is split in `(base, path)` to allow setting a default path
-        u = urlparse(url)
-        base = alias = u._replace(path='').geturl()
-        path = u.path
-
-        bookmarks = bookmark_targets()
-        if base in bookmarks:
-            # XXX if base URL points to an alias, resolve to an existing URL
-            base = bookmarks[base]
-
-        if path and path.strip('/'):
-            alias += '-'.join(path.split('/'))
-        alias, ok = show_prompt(
-            'Please enter an alias (will override aliases with the same name)',
-            default=alias)
-
-        if not (alias and ok):
-            return
-        alias_scheme = urlparse(alias).scheme
-        base_scheme = urlparse(base).scheme
-        if not alias_scheme:
-            alias = base_scheme + '://' + alias
-        elif alias_scheme != base_scheme:
-            show_alert('Bookmark alias must use the same scheme as its URL')
-            return
-        if urlparse(alias).path:
-            show_alert('Aliases should not include path information')
-            return
-
-        save_bookmark(alias, base, path)
-
-
-class RemoveFtpBookmark(DirectoryPaneCommand):
-    def __call__(self):
-        result = show_quicksearch(self._get_items)
-        if result and result[1]:
-            choice = show_alert(
-                'Are you sure you want to delete "%s"' % (result[1],),
-                buttons=YES | NO,
-                default_button=NO
-            )
-            if choice == YES:
-                bookmarks = \
-                    load_json('FTP Bookmarks.json', default={}, save_on_quit=True)
-                bookmarks.pop(result[1], None)
-                save_json('FTP Bookmarks.json')
-
-    def _get_items(self, query):
-        bookmarks = \
-            load_json('FTP Bookmarks.json', default={})
-
-        yield from _matching_items(sorted(bookmarks.keys()), query)
-
-
-class OpenFtpHistory(DirectoryPaneCommand):
-    def __call__(self):
-        result = show_quicksearch(self._get_items)
-        if result and result[1]:
-            _goto_ftp(self.pane, result[1])
-
-    def _get_items(self, query):
-        bookmarks = \
-            load_json('FTP History.json', default={})
-
-        names = (item for item, _ in sorted(
-            bookmarks.items(), key=lambda entry: entry[1], reverse=True))
-        yield from _matching_items(names, query)
 
 
 class NavigateToOpenFtpConnection(DirectoryPaneCommand):
@@ -199,8 +79,105 @@ class NavigateToOpenFtpConnection(DirectoryPaneCommand):
 
     def _get_items(self, query):
         connections = FtpWrapper.get_open_connections()
-        yield from _matching_items(
+        yield from matching_items(
             (base_url for base_url, _ in connections), query)
+
+
+class TransferQueue(DirectoryPaneCommand):
+    """Run a selected local .fppq file through one open server connection."""
+
+    def __call__(self):
+        selected = self.pane.get_selected_files()
+        if not selected:
+            under_cursor = self.pane.get_file_under_cursor()
+            selected = [under_cursor] if under_cursor else []
+        elif isinstance(selected, str):
+            selected = [selected]
+
+        if len(selected) != 1 or not self._is_queue_file(selected[0]):
+            show_alert('Select a .fppq queue file first.')
+            return
+
+        queue_url = selected[0]
+        queue_path = self._local_path(queue_url)
+        connections = FtpWrapper.get_open_connections()
+        if not connections:
+            show_alert('No open FTP/SFTP connections.\n\n'
+                       'Connect to an FTP/SFTP server first, then run '
+                       'Transfer queue again.')
+            return
+
+        if len(connections) == 1:
+            base_url, last_url = connections[0]
+        else:
+            result = show_quicksearch(self._get_connection_items)
+            if not result or not result[1]:
+                return
+            base_url = result[1]
+            last_url = next(
+                (last for base, last in connections if base == base_url),
+                base_url + '/')
+
+        try:
+            with open(queue_path, encoding='utf-8-sig') as queue_file:
+                entries = parse_queue(queue_file.read())
+        except QueueError as error:
+            show_alert(str(error))
+            return
+        except (OSError, UnicodeError) as error:
+            show_alert('Could not read the queue file: %s' % error)
+            return
+
+        if not entries:
+            show_alert('The queue file has no transfers.')
+            return
+
+        remote_cwd = urlparse(last_url).path or '/'
+        if has_relative_remote(entries) and remote_cwd != '/':
+            choice = show_alert(
+                'The queue has relative remote paths. Use the current remote '
+                'folder (%s)?\n\nChoose No to use the server root.' % remote_cwd,
+                buttons=YES | NO | CANCEL,
+                default_button=CANCEL)
+            if choice == CANCEL:
+                return
+            if choice == NO:
+                remote_cwd = '/'
+
+        pairs, missing = resolve(
+            entries, os.path.dirname(queue_path), base_url, remote_cwd)
+        if missing:
+            show_alert('These local upload sources do not exist:\n\n' +
+                       '\n'.join(missing))
+            return
+
+        name = os.path.basename(queue_path)
+        tasks = [task for src, dst in pairs
+                 for task in fs.prepare_copy(src, dst)]
+        settings = load_json('FTP Settings.json', default={})
+        if settings.get('delete_queue_after_success', False):
+            tasks.append(Task('Deleting ' + name, fn=fs.delete, args=(queue_url,)))
+        submit_task(TransferSequence('Transfer queue ' + name, tasks))
+
+    def _get_connection_items(self, query):
+        connections = FtpWrapper.get_open_connections()
+        yield from matching_items(
+            (base_url for base_url, _ in connections), query)
+
+    @staticmethod
+    def _is_queue_file(url):
+        parsed = urlparse(url)
+        return (parsed.scheme.lower() == 'file' and
+                parsed.netloc in ('', 'localhost') and
+                os.path.splitext(unquote(parsed.path))[1].lower() == '.fppq' and
+                not fs.is_dir(url))
+
+    @staticmethod
+    def _local_path(url):
+        path = unquote(urlparse(url).path)
+        if len(path) > 2 and path[0] == '/' and path[2] == ':':
+            path = path[1:]
+        return path
 
 
 class CloseIndividualFtpConnection(DirectoryPaneCommand):
@@ -223,7 +200,7 @@ class CloseIndividualFtpConnection(DirectoryPaneCommand):
 
     def _get_items(self, query):
         connections = FtpWrapper.get_open_connections()
-        yield from _matching_items(
+        yield from matching_items(
             (base_url for base_url, _ in connections), query)
 
 
@@ -262,6 +239,18 @@ class ToggleFtpDetailedStats(DirectoryPaneCommand):
                 'will be shown.\n\n'
                 'This includes size, date, permissions, owner, and group.'
             )
+
+
+class ToggleFtpQueueDeleteAfterSuccess(DirectoryPaneCommand):
+    def __call__(self):
+        settings = load_json('FTP Settings.json', default={}, save_on_quit=True)
+        settings['delete_queue_after_success'] = not settings.get(
+            'delete_queue_after_success', False)
+        save_json('FTP Settings.json')
+        if settings['delete_queue_after_success']:
+            show_alert('Transfer queue files will be deleted after a successful run.')
+        else:
+            show_alert('Transfer queue files will be kept after a successful run.')
 
 
 class SetFtpTransferRetries(DirectoryPaneCommand):

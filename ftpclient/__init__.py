@@ -9,7 +9,9 @@ from .commands import \
     OpenFtpLocation as OpenFtpLocation, \
     RemoveFtpBookmark as RemoveFtpBookmark, \
     RemoveFtpHistory as RemoveFtpHistory, \
-    ToggleFtpDetailedStats as ToggleFtpDetailedStats
+    ToggleFtpDetailedStats as ToggleFtpDetailedStats, \
+    ToggleFtpQueueDeleteAfterSuccess as ToggleFtpQueueDeleteAfterSuccess, \
+    TransferQueue as TransferQueue
 from .web_url_commands import \
     ChangeFtpWebUrl as ChangeFtpWebUrl, CopyFtpWebUrl as CopyFtpWebUrl, \
     OpenFtpWebUrl as OpenFtpWebUrl

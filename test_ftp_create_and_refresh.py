@@ -43,7 +43,7 @@ fman.__path__ = []
 fman.Task = Task
 fman.DirectoryPaneCommand = DirectoryPaneCommand
 fman.DirectoryPaneListener = DirectoryPaneListener
-fman.NO = fman.YES = 0
+fman.CANCEL = fman.NO = fman.YES = 0
 fman.QuicksearchItem = QuicksearchItem
 fman.load_json = lambda name, default=None, save_on_quit=False: \
     {} if default is None else default

@@ -18,6 +18,8 @@ A [fman++](https://fman.io/) FTP and SFTP client. FTP support uses the powerful 
 - **Close individual FTP connection** (`close_individual_ftp_connection`): Show list of active FTP connections and close the selected one.
 - **Close FTP connections** (`close_ftp_connections`): Manually close all active FTP connections and navigate to home directory.
 - **Toggle FTP detailed stats** (`toggle_ftp_detailed_stats`): Toggle between showing full file details (size, date, permissions) or just filenames for faster directory listings.
+- **Transfer queue** (`transfer_queue`): Transfer the entries in one selected `.fppq` file using an already open FTP/SFTP connection.
+- **Toggle queue deletion after success** (`toggle_ftp_queue_delete_after_success`): Choose whether a queue file is deleted after every transfer succeeds (off by default).
 - **Set FTP transfer retries** (`set_ftp_transfer_retries`): How often the plugin silently retries each failed upload, download or copy on a new connection before it counts as failed (0-10, default 2). fman then shows one retry prompt at the end of the copy or move. Saved as `transfer_retries` in `FTP Settings.json`.
 - **Copy FTP web URL** (`copy_ftp_web_url`): Copy the web URL for the current FTP path or selected file to clipboard.
 - **Change FTP web URL** (`change_ftp_web_url`): Change the base web URL associated with the current FTP bookmark.
@@ -31,6 +33,21 @@ Use one of these URL formats:
 ftp[s]://[user[:password]@]ftp.host[:port][/path/to/dir]
 sftp://[user[:password]@]sftp.host[:port][/path/to/dir]
 ```
+
+### Transfer queue files
+
+Create a UTF-8 text file with the `.fppq` extension, select it in a local fman pane, and run **Transfer queue**. Each non-empty line is one command: `put <local> <remote>` uploads a file, and `get <remote> <local>` downloads one. Paths containing spaces must be double-quoted; lines beginning with `#` and blank lines are ignored.
+
+```text
+# fman++ queue
+put "C:\site\index.html" "/public_html/"
+put "css" "/public_html/css/"
+get "/logs/error.log" "C:\logs\"
+```
+
+Absolute paths are used as written. Relative local paths resolve from the folder containing the queue file. A relative remote path resolves from the server root when the open connection is at `/`; otherwise, Transfer queue asks whether to use the current remote folder or the root. Local files named by `put` must exist before the queue starts, or the plugin lists every missing source and transfers nothing. One open server connection is used automatically; with several connections open, choose one from the picker. If no connection is open, connect to an FTP/SFTP server and run the command again.
+
+Queue files are kept after successful transfers by default. Run **Toggle queue deletion after success** to enable deletion only after the entire queue succeeds; failed or cancelled transfers leave the queue file in place. This setting is saved as `delete_queue_after_success` in `FTP Settings.json`.
 
 ## Features
 - Support for URL-encoded chars in user/password (e.g. `@` -> `%40`).
