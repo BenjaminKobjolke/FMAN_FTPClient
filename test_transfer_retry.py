@@ -61,18 +61,21 @@ fman.__path__ = []
 fman.Task = Task
 fman.YES, fman.NO = YES, NO
 fman.show_status_message = lambda *args, **kwargs: None
+fman.submit_task = lambda task: None
 fman.load_json = lambda name, default=None, save_on_quit=False: settings
 
 fs = types.ModuleType('fman.fs')
 fs.is_dir = lambda url: False
 fs.exists = lambda url: True
 fs.delete = deleted.append
+fs.makedirs = lambda url, exist_ok=False: None
 fs.notify_file_added = lambda url: None
 fman.fs = fs
 
 url = types.ModuleType('fman.url')
 url.join = lambda *parts: '/'.join(parts)
 url.basename = lambda u: u.rsplit('/', 1)[-1]
+url.dirname = lambda u: u.rsplit('/', 1)[0]
 url.splitscheme = lambda u: (u[:u.index('://') + 3], u[u.index('://') + 3:])
 fman.url = url
 
@@ -196,6 +199,18 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     assert deleted == [], 'a failed move keeps its source'
     tasks[1]()
     assert deleted == [a], deleted
+
+    # Parallel workers may run a check before the batch's last unit ends.
+    # The check must not hold the other workers back; that unit prompts.
+    reset(0, {dst_a: 1})
+    answers[:] = [NO]
+    unit, check = prepare(a, dst_a)
+    assert not getattr(check, 'waits_for_earlier_tasks', False), \
+        'a check per file would run the transfers one at a time'
+    check()
+    assert alerts == [], 'the unit has not run yet'
+    run_like_fman([[unit]])
+    assert len(alerts) == 1, alerts
 
     # Cancellation and bugs are not retried or recorded.
     reset(3, {dst_a: 1})

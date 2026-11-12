@@ -37,18 +37,22 @@ class _Batch:
         self.units = 0
         self._finished = 0
         self._failed = {}
+        self._check_missed = False
         self._lock = threading.Lock()
 
     def finish(self, key, build, failed):
+        """Return whether the caller must run the check that came too early."""
         with self._lock:
             self._finished += 1
             if failed:
                 self._failed[key] = build
+            return self._check_missed and self._finished >= self.units
 
     def take_failed_when_done(self):
         """Return the failed units once every unit ran, else None."""
         with self._lock:
-            if self._finished < self.units:
+            self._check_missed = self._finished < self.units
+            if self._check_missed:
                 return None
             failed, self._failed = self._failed, {}
             return failed
@@ -87,7 +91,8 @@ class TrackedUnit(Task):
             failed = True
             raise
         finally:
-            self._batch.finish(self._key, self._build, failed)
+            if self._batch.finish(self._key, self._build, failed):
+                self.run(_RetryFailed(self._batch))
 
 
 class _RetryFailed(Task):
@@ -95,8 +100,10 @@ class _RetryFailed(Task):
     def __init__(self, batch):
         super().__init__('Checking failed transfers', size=0)
         self._batch = batch
-        # Only the last check of a batch finds every unit finished.
-        self.waits_for_earlier_tasks = True
+        # Not waits_for_earlier_tasks: fman asks for the tasks of each file
+        # of a merged folder separately, so a check follows every file and
+        # would run the transfers one at a time. A check that comes before
+        # the batch's last unit has ended is run by that unit instead.
 
     def __call__(self):
         global _current
