@@ -46,6 +46,8 @@ fman.load_json = lambda name, default=None, save_on_quit=False: \
     {} if default is None else default
 fs = types.ModuleType('fman.fs')
 fs.FileSystem = FileSystem
+fs.Column = type('Column', (), {})
+fs.query = lambda url, method: None
 fs.cached = lambda method: method
 fs.notify_file_added = lambda url: None
 fman.fs = fs

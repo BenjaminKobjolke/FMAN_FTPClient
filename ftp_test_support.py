@@ -89,6 +89,8 @@ def load_filesystems(
 
     fman_fs = types.ModuleType('fman.fs')
     fman_fs.FileSystem = type('FileSystem', (), {})
+    fman_fs.Column = type('Column', (), {})
+    fman_fs.query = lambda url, method: None
     fman_fs.cached = lambda method: method
     fman_fs.notify_file_added = lambda url: None
     fman_fs.notify_file_removed = lambda url: None

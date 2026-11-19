@@ -15,6 +15,10 @@ def install_fman_modules(
     url.splitscheme = lambda value: (
         value[:value.index('://') + 3], value[value.index('://') + 3:])
     fman.fs = fs
+    if not hasattr(fs, 'Column'):
+        fs.Column = type('Column', (), {})
+    if not hasattr(fs, 'query'):
+        fs.query = lambda url, method: None
     fman.url = url
     sys.modules.update({'fman': fman, 'fman.fs': fs, 'fman.url': url})
 
