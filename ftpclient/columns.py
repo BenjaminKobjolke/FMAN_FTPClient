@@ -2,6 +2,10 @@ from fman.fs import Column, query
 
 from .connections import is_ftp
 
+PERMISSIONS_COLUMN_ID = 'ftpclient.columns.Permissions'
+OWNER_COLUMN_ID = 'ftpclient.columns.Owner'
+GROUP_COLUMN_ID = 'ftpclient.columns.Group'
+
 
 def _str(url, method):
     try:

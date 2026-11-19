@@ -11,6 +11,7 @@ from fman.url import \
     basename, dirname as urldirname, splitscheme
 
 from .connections import connection_for
+from .columns import GROUP_COLUMN_ID, OWNER_COLUMN_ID, PERMISSIONS_COLUMN_ID
 from .ftp import FtpWrapper, invalidate_stat_caches
 from .ftp_session import DEFAULT_PORTS, FtpConnectionError, ftputil
 from . import transfers
@@ -31,8 +32,7 @@ class FtpFs(FileSystem):
             # Show full file information
             return (
                 'core.Name', 'core.Size', 'core.Modified',
-                'ftpclient.columns.Permissions', 'ftpclient.columns.Owner',
-                'ftpclient.columns.Group')
+                PERMISSIONS_COLUMN_ID, OWNER_COLUMN_ID, GROUP_COLUMN_ID)
 
     def _notify_written(self, path):
         """

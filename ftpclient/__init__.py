@@ -1,4 +1,8 @@
 from .columns import Group as Group, Owner as Owner, Permissions as Permissions
+from .column_commands import \
+    ToggleFtpGroupColumn as ToggleFtpGroupColumn, \
+    ToggleFtpOwnerColumn as ToggleFtpOwnerColumn, \
+    ToggleFtpPermissionsColumn as ToggleFtpPermissionsColumn
 from .commands import \
     AddFtpBookmark as AddFtpBookmark, \
     CloseIndividualFtpConnection as CloseIndividualFtpConnection, \
