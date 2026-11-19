@@ -14,6 +14,7 @@ from .profile import stage_profile, _json_file
 
 DRIVER_DIRECTORY = 'fman-ftp-ui'
 FMAN_UI_DIRECTORY = 'fman-ui'
+FMAN_LOG_FILE = 'fman.log'
 
 
 def driver_root() -> Path:
@@ -32,6 +33,24 @@ def fman_source_dir() -> Path:
 def current_path() -> Path:
     """Return the fman UI driver's active-session marker path."""
     return driver_root() / FMAN_UI_DIRECTORY / 'current.json'
+
+
+def read_current() -> dict[str, Any]:
+    """Read the active session marker or report that no session is active."""
+    marker = current_path()
+    if not marker.is_file():
+        raise RuntimeError('No active fman FTP UI session')
+    return json.loads(marker.read_text(encoding='utf-8'))
+
+
+def session_result(current: dict[str, Any]) -> dict[str, Any]:
+    """Return the public launch and restart result fields from a session marker."""
+    return {
+        key: current[key] for key in (
+            'session_id', 'left', 'right', 'ftp_url', 'sftp_url', 'ftp_error',
+            'delay_seconds',
+        )
+    }
 
 
 def _reserve_port() -> int:
@@ -121,14 +140,41 @@ def _probe_windows(fman_source: Path, session_root: Path) -> dict[str, Any]:
     raise RuntimeError('fman UI probe did not write its windows result')
 
 
+def _taskkill(pid: int) -> None:
+    subprocess.run(
+        ['taskkill', '/PID', str(pid), '/T', '/F'],
+        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def _start_fman(
+    fman_source: Path, current: dict[str, Any], session_root: Path,
+) -> subprocess.Popen[bytes]:
+    fman_main = fman_source / 'src' / 'main' / 'python' / 'fman' / 'main.py'
+    environment = os.environ.copy()
+    environment['FMAN_DATA_DIRECTORY'] = current['profile']
+    environment['PYTHONPATH'] = str(fman_source / 'src' / 'main' / 'python')
+    environment['FTP_UI_DRIVER_SESSION'] = str(session_root)
+    flags = (
+        getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+        | getattr(subprocess, 'DETACHED_PROCESS', 0)
+    )
+    with (session_root / FMAN_LOG_FILE).open('ab') as log:
+        process = subprocess.Popen(
+            [_python_executable(), str(fman_main), current['left'], current['right']],
+            cwd=str(fman_source), env=environment,
+            stdout=log, stderr=subprocess.STDOUT, creationflags=flags,
+        )
+    current['pid'] = process.pid
+    _json_file(current_path(), current)
+    return process
+
+
 def _kill_process(process: subprocess.Popen[bytes] | None) -> None:
     if process is None or process.poll() is not None:
         return
     if os.name == 'nt':
-        subprocess.run(
-            ['taskkill', '/PID', str(process.pid), '/T', '/F'],
-            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+        _taskkill(process.pid)
     else:
         process.kill()
     try:
@@ -194,34 +240,11 @@ def launch(delay_seconds: float = 1.0) -> dict[str, Any]:
             'ftp_error': servers['ftp_error'],
             'delay_seconds': delay_seconds,
         }
-        environment = os.environ.copy()
-        environment['FMAN_DATA_DIRECTORY'] = staged['profile']
-        environment['PYTHONPATH'] = str(fman_source / 'src' / 'main' / 'python')
-        environment['FTP_UI_DRIVER_SESSION'] = str(session_root)
-        flags = (
-            getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
-            | getattr(subprocess, 'DETACHED_PROCESS', 0)
-        )
-        log_path = session_root / 'fman.log'
-        with log_path.open('wb') as log:
-            fman_process = subprocess.Popen(
-                [_python_executable(), str(fman_main), staged['left'], staged['right']],
-                cwd=str(fman_source), env=environment,
-                stdout=log, stderr=subprocess.STDOUT, creationflags=flags,
-            )
-        session['pid'] = fman_process.pid
-        _json_file(marker, session)
+        fman_process = _start_fman(fman_source, session, session_root)
+        log_path = session_root / FMAN_LOG_FILE
         _wait_for_state(fman_source, fman_process, log_path)
         _probe_windows(fman_source, session_root)
-        return {
-            'session_id': session_id,
-            'left': staged['left'],
-            'right': staged['right'],
-            'ftp_url': staged['ftp_url'],
-            'sftp_url': staged['sftp_url'],
-            'ftp_error': servers['ftp_error'],
-            'delay_seconds': delay_seconds,
-        }
+        return session_result(session)
     except Exception:
         _kill_process(fman_process)
         _kill_process(server_process)
@@ -232,17 +255,12 @@ def launch(delay_seconds: float = 1.0) -> dict[str, Any]:
 
 def close() -> dict[str, Any]:
     """Stop the fixture server, then let fman's driver close and clean fman."""
+    current = read_current()
     marker = current_path()
-    if not marker.is_file():
-        raise RuntimeError('No active fman FTP UI session')
-    current = json.loads(marker.read_text(encoding='utf-8'))
     session_root = Path(current['profile']).parent
     server_pid = current.get('servers_pid')
     if server_pid is not None:
-        subprocess.run(
-            ['taskkill', '/PID', str(server_pid), '/T', '/F'],
-            check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+        _taskkill(server_pid)
     result = _run_driver(fman_source_dir(), 'close')
     shutil.rmtree(session_root, ignore_errors=True)
     marker.unlink(missing_ok=True)

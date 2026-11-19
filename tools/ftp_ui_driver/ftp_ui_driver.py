@@ -1,6 +1,6 @@
 """Isolated fman FTP desktop driver.
 
-Commands: launch [--delay SECONDS], reset, server-files ftp|sftp, windows,
+Commands: launch [--delay SECONDS], reset, server-files ftp|sftp, restart, windows,
 window-click, minimized-click, window-screenshot, close, state, commands,
 dialog, command, files, keys, type, click and screenshot.
 """
@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from tools.ftp_ui_driver import fixtures, session  # noqa: E402
+from tools.ftp_ui_driver import fixtures, restart, session  # noqa: E402
 
 _CONSTANTS_PATH = (
     Path(__file__).parent / 'FTPUiDriverProbe' / 'ftp_ui_driver_probe' /
@@ -75,6 +75,7 @@ def _parser() -> argparse.ArgumentParser:
     screenshot.add_argument('--path', required=True)
     screenshot.add_argument('--title')
     commands.add_parser('close', add_help=False)
+    commands.add_parser('restart', add_help=False)
     return parser
 
 
@@ -83,10 +84,7 @@ def _json_result(result: Any) -> None:
 
 
 def _session_root() -> Path:
-    marker = session.current_path()
-    if not marker.is_file():
-        raise RuntimeError('No active fman FTP UI session')
-    current = json.loads(marker.read_text(encoding='utf-8'))
+    current = session.read_current()
     return Path(current['profile']).parent
 
 
@@ -143,6 +141,8 @@ def _dispatch_custom(arguments: list[str]) -> int:
         _json_result(_server_files(args.protocol))
     elif args.action == 'close':
         _json_result(session.close())
+    elif args.action == 'restart':
+        _json_result(restart.restart())
     else:
         command_name, build_arguments = PROBE_COMMANDS[args.action]
         _json_result(_probe(command_name, build_arguments(args)))

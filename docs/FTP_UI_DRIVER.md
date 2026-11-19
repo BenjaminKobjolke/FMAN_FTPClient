@@ -59,6 +59,7 @@ tools\ftp_ui_driver.bat windows
 tools\ftp_ui_driver.bat window-click --title "Copying upload" --button "–"
 tools\ftp_ui_driver.bat minimized-click --title "Copying upload"
 tools\ftp_ui_driver.bat window-screenshot --path "%TEMP%\ftp-transfer.png" --title "Copying upload"
+tools\ftp_ui_driver.bat restart
 tools\ftp_ui_driver.bat close
 ```
 
@@ -77,6 +78,7 @@ Example results (session IDs, paths, progress, and fixture contents vary):
 
 ```json
 {"session_id":"<id>","ftp_url":"ftp://ftp-fixture/","sftp_url":"sftp://sftp-fixture/","delay_seconds":1.0,"ftp_error":null}
+{"restarted":true,"session_id":"<id>","left":"<path>","right":"<path>","ftp_url":"ftp://ftp-fixture/","sftp_url":"sftp://sftp-fixture/","ftp_error":null,"delay_seconds":1.0,"pid":<pid>}
 {"protocol":"ftp","files":["delete-me/d01.txt","folder/source.txt","single.txt"]}
 {"ok":true,"windows":[{"title":"Copying upload","texts":["Copying upload"],"buttons":[{"text":"–","enabled":true}],"value":4,"maximum":12}]}
 {"ok":true,"clicked":"–","title":"Copying upload"}
@@ -95,6 +97,35 @@ main window. Generic `screenshot` captures the main window or active dialog.
 
 `reset` returns the seeded paths and a reload reminder. `close` stops the fixture server process
 tree before closing fman and deleting the session folder.
+
+`restart` asks the session's fman to quit, waits up to 15 seconds, then force-stops it if needed
+and starts it again with the same profile, settings, environment, fixture trees, and running
+FTP/SFTP servers. It waits for the scripting API and probe plugin, and generic commands work
+again after it returns. Both panes reopen on the local fixture folders; reopen an FTP pane with
+`command open_directory` to inspect the FTP plugin. If fman does not come back, the error says
+so and recommends `close`; the session marker and fixture folder remain available for cleanup.
+
+## Example sequence for check #2497: column visibility survives a restart
+
+This is an example sequence, not a passing result. Hide the Permissions column, restart fman,
+reopen the FTP pane and inspect the screenshot, then toggle the column back on and close the
+session:
+
+```bat
+tools\ftp_ui_driver.bat launch --delay 0
+tools\ftp_ui_driver.bat command open_directory "{\"url\":\"ftp://ftp-fixture/\"}" --pane 1
+tools\ftp_ui_driver.bat command toggle_ftp_permissions_column "{}" --pane 1
+tools\ftp_ui_driver.bat screenshot "%TEMP%\ftp-perm-hidden.png"
+tools\ftp_ui_driver.bat restart
+tools\ftp_ui_driver.bat command open_directory "{\"url\":\"ftp://ftp-fixture/\"}" --pane 1
+tools\ftp_ui_driver.bat screenshot "%TEMP%\ftp-perm-after-restart.png"
+tools\ftp_ui_driver.bat command toggle_ftp_permissions_column "{}" --pane 1
+tools\ftp_ui_driver.bat screenshot "%TEMP%\ftp-perm-shown.png"
+tools\ftp_ui_driver.bat close
+```
+
+The Permissions column should be hidden in the first two screenshots and visible again in the
+last one.
 
 ## Example sequence for check #1556: minimize during a copy
 

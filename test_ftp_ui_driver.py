@@ -18,6 +18,12 @@ from ftp_ui_driver_test_support import (
     _test_session_close_order,
     _test_session_launch_and_cleanup,
 )
+from ftp_ui_driver_restart_test_support import (
+    _test_restart_command,
+    _test_restart_startup_failure,
+    _test_session_restart,
+    _test_wait_for_exit,
+)
 
 
 FTP_CASES_AVAILABLE = all(os.path.isdir(os.path.join(HERE, 'test-vendor', name))
@@ -209,6 +215,10 @@ def main() -> None:
     _test_profile_staging()
     _test_session_launch_and_cleanup()
     _test_session_close_order()
+    _test_session_restart()
+    _test_restart_startup_failure()
+    _test_wait_for_exit()
+    _test_restart_command()
     _test_driver_commands()
     _test_batch_launcher_errors()
     _test_json_output_escapes_console_glyphs()
