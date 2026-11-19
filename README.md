@@ -18,6 +18,12 @@ A [fman++](https://fman.io/) FTP and SFTP client. FTP support uses the powerful 
 - **Close individual FTP connection** (`close_individual_ftp_connection`): Show list of active FTP connections and close the selected one.
 - **Close FTP connections** (`close_ftp_connections`): Manually close all active FTP connections and navigate to home directory.
 - **Toggle FTP detailed stats** (`toggle_ftp_detailed_stats`): Toggle between showing full file details (size, date, permissions) or just filenames for faster directory listings.
+- **Toggle FTP permissions column** (`toggle_ftp_permissions_column`): Show or hide the Permissions column.
+- **Toggle FTP owner column** (`toggle_ftp_owner_column`): Show or hide the Owner column.
+- **Toggle FTP group column** (`toggle_ftp_group_column`): Show or hide the Group column.
+
+The column toggles require fman++ with the Core `toggle_column` command. fman saves each column's visibility across restarts. The Permissions, Owner and Group columns are not shown while detailed stats are disabled.
+
 - **Transfer queue** (`transfer_queue`): Transfer the entries in one selected `.fppq` file using an already open FTP/SFTP connection.
 - **Toggle queue deletion after success** (`toggle_ftp_queue_delete_after_success`): Choose whether a queue file is deleted after every transfer succeeds (off by default).
 - **Set FTP transfer retries** (`set_ftp_transfer_retries`): How often the plugin silently retries each failed upload, download or copy on a new connection before it counts as failed (0-10, default 2). fman then shows one retry prompt at the end of the copy or move. Saved as `transfer_retries` in `FTP Settings.json`.
