@@ -59,6 +59,8 @@ def _test_profile_staging() -> None:
         assert settings['single_instance'] is False
         assert settings['scripting_api']['enabled'] is True
         assert settings['scripting_api']['command_access'] == 'all'
+        assert settings['error_reports'] is False
+        assert settings['usage_metrics'] is False
         with open(os.path.join(profile, 'Local', 'Session.json')) as stream:
             assert json.load(stream) == {'panes': [{}, {}]}
         with open(staged['token_path']) as stream:

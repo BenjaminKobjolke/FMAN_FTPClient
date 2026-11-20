@@ -57,6 +57,9 @@ def stage_profile(
 
     settings = {
         'single_instance': False,
+        # Pre-answer fman's consent MessageBox; otherwise the scripting API blocks.
+        'error_reports': False,
+        'usage_metrics': False,
         'scripting_api': {
             'enabled': True,
             'automation': True,
